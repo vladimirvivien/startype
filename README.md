@@ -1,20 +1,19 @@
 # Startype 🤩
 
-If you have used the Starlark API to build tools, you know it can be awkward when going from Go types to Starlark-backed types and vice versa.
-Startype makes it easy to automatically convert (roundtrip) between Go types and Starlark-Go API types.
+Startype makes it easy to automatically convert (two-way) between Go types and Starlark-Go API types.
 
 ## Features
 
 * Two-way conversion between Go and Starlark-Go types
-* Two-way conversion for primitive types (bool, numeric, string, etc)
-* Conversion of Go container types (slice, array, map, struct)
-* Conversion of Starlark container types (Dict, StringDict, List, Set)
+* Two-way conversion for primitive types like `bool`, `integer`, `float`, and `string` types
+* Convert Go `slice`, `array`, `map`, and `struct` types to compatible Starlark types
+* Convert Starlark `Dict`, `StringDict`, `List`, `Set`, and `StarlarkStruct` to compatible Go types
 * Support for type pointers and and empty interface (any) types
 
 ## Examples
 
 ### Convert Go value to Starlark value
-The following converts a struct to a (comptible) `*starlarkstruct.Struct` value:
+The following converts a Go `struct` to a (comptible) `*starlarkstruct.Struct` value:
 
 ```go
 func main() {
@@ -31,7 +30,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-    // validate
 	nameVal, err := star.Attr("name")
 	if err != nil {
 		log.Fatal(err)
@@ -43,7 +41,8 @@ func main() {
 ```
 ### Convert Starlark value to Go value
 
-Startype can easily convert a Starlark-API value into a standard Go value as shown below:
+Startype can easily convert a Starlark-API value into a standard Go value. The following 
+converts a `starlark.Dict` dictionary value to a Go `map[string]string` value.
 
 ```go
 func main() {
@@ -65,7 +64,7 @@ func main() {
 }
 ```
 
-### Use struct annotation to target Starlark-Go type fields
+### Use struct annotations to control conversion
 
 Startype supports struct annotations to describe field names to target during conversion. For instance, the following example uses the provided struct tags when creating Starlark-Go values. 
 
@@ -120,8 +119,8 @@ func main() {
 }
 ```
 
-## Starlark built-in function keywords processing
-Startype makes it easy to process Starlark keyword arguments (passed as tuples in builtin functions) by automatically map the provided arguments to a Go struct value. For instance, 
+## Starlark keyword argument processing
+Startype makes it easy to capture and process Starlark keyword arguments (passed as tuples in [built-in functions](https://github.com/google/starlark-go/blob/master/doc/spec.md#built-in-functions)) by automatically map the provided arguments to a Go struct value. For instance, the following maps `kwargs` (a stand in for a actual keyword arguments) to Go struct `args`:
 
 ```go
 
@@ -142,8 +141,8 @@ func main() {
 }
 ```
 
-An argument can be marked as optional to avoid error when it is not provided. For instance, 
-if argument `cnt` is not provided in the `kwargs` tuple, function `KwargsToGo` will not reoprt an error.
+An argument can be marked as optional to avoid error if it is not provided. For instance, 
+if argument `cnt` is not provided in the `kwargs` tuple, function `KwargsToGo` will not report an error.
 
 ```go
 
@@ -163,4 +162,4 @@ func main() {
 }
 ```
 
-For additional conversion examples, see the test files in this module.
+For additional conversion examples, see the test functions in the test files.
