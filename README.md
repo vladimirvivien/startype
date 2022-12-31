@@ -8,6 +8,7 @@ Startype makes it easy to automatically convert (two-way) between Go types and S
 * Two-way conversion for primitive types like `bool`, `integer`, `float`, and `string` types
 * Convert Go `slice`, `array`, `map`, and `struct` types to compatible Starlark types
 * Convert Starlark `Dict`, `StringDict`, `List`, `Set`, and `StarlarkStruct` to compatible Go types
+* Map Starlark keyword args (from built-in functions) to Go struct values
 * Support for type pointers and and empty interface (any) types
 
 ## Examples
@@ -133,7 +134,7 @@ func main() {
         Message string   `name:"msg"`
         Count int64      `name:"cnt"`
     }
-	if err := KwargsToGo(kwargs, &val); err != nil {
+	if err := startype.Kwargs(kwargs).Go(&val); err != nil {
 		t.Fatal(err)
 	}
 
@@ -154,7 +155,7 @@ func main() {
         Message string   `name:"msg"`
         Count int64      `name:"cnt optional:true"`
     }
-	if err := KwargsToGo(kwargs, &val); err != nil {
+	if err := startype.Kwargs(kwargs).Go(&val); err != nil {
 		t.Fatal(err)
 	}
 
