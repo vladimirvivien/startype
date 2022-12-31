@@ -7,39 +7,52 @@ import (
 	"go.starlark.net/starlark"
 )
 
-// KwargsToGo converts a slice of Starlark kwargs (keyword args) value
+type KwargsValue struct {
+	kwargs []starlark.Tuple
+}
+
+// Kwargs starts the conversion of a Starlark kwargs (keyword args) value
 // to a Go struct. The function uses annotated fields on the struct to describe
 // the keyword argument mapping as:
 //
-//	type Param struct {
+//	var Param struct {
 //	    OutputFile  string   `name:"output_file" optional:"true"`
 //	    SourcePaths []string `name:"output_path"`
 //	}
 //
-// The previous struct can be mapped to the following keyword args:
+// The struct can be mapped to the following keyword args:
 //
-//	[]starlark.Tuple{
-//	    {starlark.String("output_file"), starlark.String("/tmp/out.tar.gz")},
-//		   {starlark.String("source_paths"), starlark.NewList([]starlark.Value{starlark.String("/tmp/myfile")})},
+//	kwargs := []starlark.Tuple{
+//	   {starlark.String("output_file"), starlark.String("/tmp/out.tar.gz")},
+//	   {starlark.String("source_paths"), starlark.NewList([]starlark.Value{starlark.String("/tmp/myfile")})},
 //	}
 //
+// # Example
+//
+// Kwargs(kwargs).Go(&Param)
+//
 // Supported annotation: `name:"arg_name" optional:"true|false" (default false)`
-func KwargsToGo(kwargs []starlark.Tuple, goStructPtr interface{}) error {
-	if kwargs == nil {
-		return fmt.Errorf("missing keyword arguments")
+func Kwargs(kwargs []starlark.Tuple) *KwargsValue {
+	return &KwargsValue{kwargs: kwargs}
+}
+
+func (v *KwargsValue) Go(gostruct any) error {
+	if v.kwargs == nil {
+		return fmt.Errorf("keyword arguments is nil")
 	}
-	goval := reflect.ValueOf(goStructPtr)
-	gotype := goval.Type()
+	goval := reflect.ValueOf(gostruct)
+	gotype := reflect.ValueOf(gostruct).Type()
 	if gotype.Kind() != reflect.Pointer || goval.IsNil() {
 		return fmt.Errorf("kwargs expects a non-nil pointer to a struct, got %v", gotype.Kind())
 	}
-	return kwargsToGo(kwargs, goval.Elem())
+
+	return kwargsToGo(v.kwargs, goval.Elem())
 }
 
 func kwargsToGo(kwargs []starlark.Tuple, goval reflect.Value) error {
 	gotype := goval.Type()
 	if gotype.Kind() != reflect.Struct {
-		return fmt.Errorf("kwargs requires non-nil pointer to struct, got: %v", gotype)
+		return fmt.Errorf("target type %s: a struct", gotype.Kind())
 	}
 
 	if !goval.IsValid() {
@@ -73,11 +86,18 @@ func kwargsToGo(kwargs []starlark.Tuple, goval reflect.Value) error {
 
 		// set field value if not None
 		if kwarg != starlark.None {
-			fieldVal := reflect.New(field.Type).Elem()
+			fieldVal := goval.FieldByName(field.Name)
+
+			if fieldVal.Kind() == reflect.Pointer {
+				fieldVal.Set(reflect.New(field.Type.Elem()))
+				fieldVal = fieldVal.Elem()
+			} else {
+				fieldVal.Set(reflect.New(field.Type).Elem())
+			}
+
 			if err := starlarkToGo(kwarg, fieldVal); err != nil {
 				return err
 			}
-			goval.FieldByName(field.Name).Set(fieldVal)
 		}
 	}
 
