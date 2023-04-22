@@ -31,7 +31,7 @@ type KwargsValue struct {
 //
 // Kwargs(kwargs).Go(&Param)
 //
-// Supported annotation: `name:"arg_name" optional:"true|false" (default false)`
+// Supported annotation: `name:"arg_name" required:"true|false" (default false)`
 func Kwargs(kwargs []starlark.Tuple) *KwargsValue {
 	return &KwargsValue{kwargs: kwargs}
 }
@@ -73,15 +73,16 @@ func kwargsToGo(kwargs []starlark.Tuple, goval reflect.Value) error {
 			return err
 		}
 
-		// is arg marked optional? By default args are optional=false
-		// arg is optional if it is explicitly marked with "true" or "yes"
-		argOptional, _ := field.Tag.Lookup("optional")
-		switch argOptional {
+		// is arg marked required? By default args are required=false
+		// an arg is required if it is explicitly marked with "true" or "yes"
+		// otherwise, it's ignored
+		argRequired, _ := field.Tag.Lookup("required")
+		switch argRequired {
 		case "true", "yes":
-		default:
 			if kwarg == starlark.None {
 				return fmt.Errorf("argument '%s' is required", argName)
 			}
+		default:
 		}
 
 		// set field value if not None
