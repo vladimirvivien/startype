@@ -174,12 +174,12 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 
 	case "string":
 		if gotype.Kind() != reflect.String && gotype.Kind() != reflect.Interface && gotype.Kind() != reflect.Pointer {
-			return fmt.Errorf("target target (%s): must be string, *string, or any", gotype.Kind())
+			return fmt.Errorf("Starlark.String to Go: target target (%s): must be string, *string, or any", gotype.Kind())
 		}
 
 		strVal, ok := srcVal.(starlark.String)
 		if !ok {
-			return fmt.Errorf("failed to assert %T as starlark.String", srcVal)
+			return fmt.Errorf("Starlark.String to Go: failed to assert %T as starlark.String", srcVal)
 		}
 
 		starval = reflect.ValueOf(string(strVal))
@@ -225,14 +225,30 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 		return nil
 
 	case "dict":
-		if gotype.Kind() != reflect.Map {
-			return fmt.Errorf("target type must be map")
-		}
+		// Converting a Dict -> Map requires a bit of work to handle embedded maps,
+		// when the outer map value is of type `map[T]any`. The reflect package cannot build
+		// a new map without type information for both key and elements. So, extra work must be
+		// done to construct an inner map dynamically by assuming type `map[any]any` when the
+		// outer map values have type like `map[string]any` for instance.
 		dict, ok := srcVal.(*starlark.Dict)
 		if !ok {
 			return fmt.Errorf("failed to assert %T as *starlark.Dict", srcVal)
 		}
-		goval.Set(reflect.MakeMap(gotype))
+
+		// map target type
+		switch gotype.Kind() {
+		case reflect.Map:
+			goval.Set(reflect.MakeMapWithSize(gotype, dict.Len()))
+		case reflect.Interface:
+			gotype = reflect.TypeOf(map[any]any{})
+			goval.Set(reflect.MakeMapWithSize(gotype, dict.Len()))
+		case reflect.Pointer:
+			goval.Set(reflect.New(gotype.Elem()))
+			return starlarkToGo(dict, goval.Elem())
+		default:
+			return fmt.Errorf("Starlark.Dict to Go: target type (%s): must be map, *map, any, or pointer", gotype.Name())
+		}
+
 		for _, dictKey := range dict.Keys() {
 			dictVal, ok, err := dict.Get(dictKey)
 			if err != nil {
@@ -242,20 +258,27 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 				continue
 			}
 
-			// convert starlark key to Go value
-			goMapKey := reflect.New(gotype.Key()).Elem()
+			// convert map key
+			keyType := getExactMapType(dictKey, gotype.Key())
+			goMapKey := reflect.New(keyType).Elem()
 			if err := starlarkToGo(dictKey, goMapKey); err != nil {
 				return err
 			}
 
-			// convert starlark dict value to Go value
-			goMapVal := reflect.New(gotype.Elem()).Elem()
-			if err := starlarkToGo(dictVal, goMapVal); err != nil {
-				return err
+			// convert map element
+			var goMapElem reflect.Value
+			if dictVal != nil {
+				elemType := getExactMapType(dictVal, gotype.Elem())
+				goMapElem = reflect.New(elemType).Elem()
+				if err := starlarkToGo(dictVal, goMapElem); err != nil {
+					return err
+				}
+			} else {
+				goMapElem = reflect.ValueOf(nil)
 			}
 
 			// store map value
-			goval.SetMapIndex(goMapKey, goMapVal)
+			goval.SetMapIndex(goMapKey, goMapElem)
 		}
 		return nil
 
@@ -340,4 +363,16 @@ func findStructFieldByTag(gotype reflect.Type, tagKey, tagValue string) (string,
 	}
 
 	return "", false
+}
+
+func getExactMapType(val starlark.Value, gotype reflect.Type) reflect.Type {
+	switch val.Type() {
+	case "dict":
+		if gotype.Kind() == reflect.Map {
+			return gotype
+		}
+		return reflect.TypeOf(map[any]any{})
+	default:
+		return gotype
+	}
 }

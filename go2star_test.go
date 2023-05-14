@@ -45,7 +45,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: true,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Value
-				if err := goToStarlark(true, &starval); err != nil {
+				if err := Go(true).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.Truth() != true {
@@ -58,7 +58,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: math.MaxInt32,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Int
-				if err := goToStarlark(math.MaxInt32, &starval); err != nil {
+				if err := Go(math.MaxInt32).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				val, ok := starval.Int64()
@@ -75,7 +75,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: math.MaxInt32,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Value
-				if err := goToStarlark(math.MaxInt32, &starval); err != nil {
+				if err := Go(math.MaxInt32).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				val, ok := starval.(starlark.Int)
@@ -92,7 +92,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: math.MaxInt32,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval *starlark.Int
-				if err := goToStarlark(math.MaxInt32, &starval); err != nil {
+				if err := Go(math.MaxInt32).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				val, ok := starval.Int64()
@@ -109,7 +109,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: uint64(math.MaxUint64),
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Int
-				if err := goToStarlark(uint64(math.MaxUint64), &starval); err != nil {
+				if err := Go(uint64(math.MaxUint64)).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				val, ok := starval.Uint64()
@@ -126,7 +126,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: uint64(math.MaxUint64),
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval *starlark.Int
-				if err := goToStarlark(uint64(math.MaxUint64), &starval); err != nil {
+				if err := Go(uint64(math.MaxUint64)).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				val, ok := starval.Uint64()
@@ -143,7 +143,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: uint64(math.MaxUint64),
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Value
-				if err := goToStarlark(uint64(math.MaxUint64), &starval); err != nil {
+				if err := Go(uint64(math.MaxUint64)).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				val, ok := starval.(starlark.Int)
@@ -160,7 +160,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: math.MaxFloat32,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Float
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval != math.MaxFloat32 {
@@ -173,7 +173,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: math.MaxFloat32,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval *starlark.Float
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if *starval != math.MaxFloat32 {
@@ -186,7 +186,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: math.MaxFloat32,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Value
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.(starlark.Float) != math.MaxFloat32 {
@@ -199,7 +199,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: "Hello World!",
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.String
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if string(starval) != `Hello World!` {
@@ -212,7 +212,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: "Hello World!",
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval *starlark.String
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if string(*starval) != `Hello World!` {
@@ -225,7 +225,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: "Hello World!",
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Value
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.String() != `"Hello World!"` {
@@ -238,7 +238,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: []string{"Hello", "World!"},
 			eval: func(t *testing.T, goVal interface{}) {
 				starval := make(starlark.Tuple, 2)
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.Len() != 2 {
@@ -254,7 +254,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: []int{1, 2, math.MaxInt8},
 			eval: func(t *testing.T, goVal interface{}) {
 				starval := make(starlark.Tuple, 3)
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.Len() != 3 {
@@ -272,7 +272,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: []interface{}{1, 2, 3, "Go!"},
 			eval: func(t *testing.T, goVal interface{}) {
 				starval := make(starlark.Tuple, 4)
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.Len() != 4 {
@@ -289,7 +289,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: []int{1, 2, math.MaxInt8},
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Value
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				tuple := starval.(starlark.Tuple)
@@ -308,7 +308,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: []int{1, 2, math.MaxInt8},
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval *starlark.Tuple
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if len(*starval) != 3 {
@@ -326,7 +326,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: map[string]string{"msg": "hello", "target": "world"},
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Dict
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.Len() != 2 {
@@ -348,7 +348,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: map[string]int{"one": 12, "two": math.MaxInt8, "three": math.MaxInt64},
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Dict
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.Len() != 3 {
@@ -369,7 +369,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: map[any]any{"one": "12", "two": math.MaxInt8, 3: math.MaxInt64},
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Dict
-				if err := goToStarlark(goVal, &starval); err != nil {
+				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval.Len() != 3 {
