@@ -355,6 +355,126 @@ func TestStarlarkToGo(t *testing.T) {
 			},
 		},
 		{
+			name: "dict[int]int",
+			starVal: func() *starlark.Dict {
+				dict := starlark.NewDict(2)
+				if err := dict.SetKey(starlark.MakeInt(1), starlark.MakeInt(math.MaxInt32)); err != nil {
+					panic(err)
+				}
+				if err := dict.SetKey(starlark.MakeInt(2), starlark.MakeInt64(math.MaxInt64)); err != nil {
+					panic(err)
+				}
+				return dict
+			}(),
+			eval: func(t *testing.T, val starlark.Value) {
+				gomap := make(map[int64]int64)
+				if err := Starlark(val).Go(&gomap); err != nil {
+					t.Fatalf("failed to convert starlark to go value: %s", err)
+				}
+				if gomap[1] != math.MaxInt32 {
+					t.Fatalf("unexpected map[msg] value: %v", gomap[1])
+				}
+				if gomap[2] != math.MaxInt64 {
+					t.Fatalf("unexpected map[msg] value: %v", gomap[2])
+				}
+			},
+		},
+		{
+			name: "dict[string]inner-map",
+			starVal: func() *starlark.Dict {
+				inner := starlark.NewDict(1)
+				if err := inner.SetKey(starlark.String("type"), starlark.String("web")); err != nil {
+					t.Fatal(err)
+				}
+				dict := starlark.NewDict(1)
+				if err := dict.SetKey(starlark.String("labels"), inner); err != nil {
+					panic(err)
+				}
+				return dict
+			}(),
+			eval: func(t *testing.T, val starlark.Value) {
+				gomap := make(map[string]map[string]string)
+				if err := Starlark(val).Go(&gomap); err != nil {
+					t.Fatalf("failed to convert starlark to go value: %s", err)
+				}
+
+				inner := gomap["labels"]
+				if inner == nil {
+					t.Fatal("inner map is nil")
+				}
+
+				if inner["type"] != "web" {
+					t.Fatalf("unexpected value for inner map: %#v", inner)
+				}
+			},
+		},
+		{
+			name: "dict[string]inner-struct",
+			starVal: func() *starlark.Dict {
+				inner := starlark.StringDict{
+					"msg0": starlark.String("hello"),
+					"msg1": starlark.String("world"),
+				}
+				dict := starlark.NewDict(1)
+				if err := dict.SetKey(starlark.String("messages"), starlarkstruct.FromStringDict(starlark.String("struct"), inner)); err != nil {
+					panic(err)
+				}
+				return dict
+			}(),
+			eval: func(t *testing.T, val starlark.Value) {
+				type innerStruct struct {
+					Msg0 string
+					Msg1 string
+				}
+				gomap := make(map[string]innerStruct)
+				if err := Starlark(val).Go(&gomap); err != nil {
+					t.Fatalf("failed to convert starlark to go value: %s", err)
+				}
+
+				inner := gomap["messages"]
+
+				if !reflect.DeepEqual(inner, innerStruct{Msg0: "hello", Msg1: "world"}) {
+					t.Fatalf("unexpected value for inner struct: %#v", inner)
+				}
+			},
+		},
+		{
+			name: "dict[string]any",
+			starVal: func() *starlark.Dict {
+				inner := starlark.NewDict(1)
+				if err := inner.SetKey(starlark.String("inner-type"), starlark.String("web")); err != nil {
+					t.Fatal(err)
+				}
+				dict := starlark.NewDict(1)
+				if err := dict.SetKey(starlark.String("inner"), inner); err != nil {
+					panic(err)
+				}
+				if err := dict.SetKey(starlark.String("name"), starlark.String("app")); err != nil {
+					panic(err)
+				}
+				return dict
+			}(),
+			eval: func(t *testing.T, val starlark.Value) {
+				gomap := make(map[string]any)
+				if err := Starlark(val).Go(&gomap); err != nil {
+					t.Fatalf("failed to convert starlark to go value: %s", err)
+				}
+
+				if gomap["name"] != "app" {
+					t.Fatal("unexpected value for key 'name':", gomap["name"])
+				}
+				inner := gomap["inner"]
+				if inner == nil {
+					t.Fatal("inner map is nil")
+				}
+				innerMap := inner.(map[any]any)
+
+				if innerMap["inner-type"] != "web" {
+					t.Fatalf("unexpected value for inner map: %#v", inner)
+				}
+			},
+		},
+		{
 			name: "set-string",
 			starVal: func() *starlark.Set {
 				set := starlark.NewSet(2)

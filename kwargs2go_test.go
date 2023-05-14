@@ -15,14 +15,14 @@ func TestStarKwargs2Go(t *testing.T) {
 		eval   func(t *testing.T, kwargs []starlark.Tuple)
 	}{
 		{
-			name:   "missing explicit optional arg",
+			name:   "missing explicit required arg",
 			kwargs: []starlark.Tuple{},
 			eval: func(t *testing.T, kwargs []starlark.Tuple) {
 				var val struct {
-					A string `name:"a" optional:"true"`
+					A string `name:"a" required:"true"`
 				}
-				if err := Kwargs(kwargs).Go(&val); err != nil {
-					t.Fatal(err)
+				if err := Kwargs(kwargs).Go(&val); err == nil {
+					t.Fatal("expecting required argument error")
 				}
 				if val.A != "" {
 					t.Error("expecting empty value")
@@ -34,10 +34,10 @@ func TestStarKwargs2Go(t *testing.T) {
 			kwargs: []starlark.Tuple{},
 			eval: func(t *testing.T, kwargs []starlark.Tuple) {
 				val := struct {
-					A string `name:"a" optional:"false"`
+					A string `name:"a" required:"false"`
 				}{}
-				if err := Kwargs(kwargs).Go(&val); err == nil {
-					t.Fatal("should fail due to missing arg")
+				if err := Kwargs(kwargs).Go(&val); err != nil {
+					t.Fatalf("unexpected error: %s", err)
 				}
 			},
 		},
@@ -48,16 +48,17 @@ func TestStarKwargs2Go(t *testing.T) {
 				val := struct {
 					A string `name:"a"`
 				}{}
-				if err := Kwargs(kwargs).Go(&val); err == nil {
-					t.Fatal("should fail due to missing arg")
+				if err := Kwargs(kwargs).Go(&val); err != nil {
+					t.Fatalf("unexpected error: %s", err)
 				}
 			},
 		},
 		{
-			name: "all required",
+			name: "all optional implied",
 			kwargs: []starlark.Tuple{
 				{starlark.String("a"), starlark.String("hello")},
 				{starlark.String("b"), starlark.MakeInt(32)},
+				{starlark.String("c"), starlark.MakeInt(64)},
 			},
 			eval: func(t *testing.T, kwargs []starlark.Tuple) {
 				val := struct {
@@ -76,15 +77,15 @@ func TestStarKwargs2Go(t *testing.T) {
 			},
 		},
 		{
-			name: "all optional",
+			name: "all optional explicit",
 			kwargs: []starlark.Tuple{
 				{starlark.String("a"), starlark.String("hello")},
 				{starlark.String("b"), starlark.MakeInt(32)},
 			},
 			eval: func(t *testing.T, kwargs []starlark.Tuple) {
 				val := struct {
-					A string `name:"a" optional:"true"`
-					B int64  `name:"b" optional:"true"`
+					A string `name:"a" required:"false"`
+					B int64  `name:"b" required:"false"`
 				}{}
 				if err := Kwargs(kwargs).Go(&val); err != nil {
 					t.Fatal(err)
@@ -105,8 +106,8 @@ func TestStarKwargs2Go(t *testing.T) {
 			},
 			eval: func(t *testing.T, kwargs []starlark.Tuple) {
 				val := struct {
-					A string `name:"a" optional:"true"`
-					B int64  `name:"b" optional:"false"`
+					A string `name:"a" required:"true"`
+					B int64  `name:"b" required:"false"`
 				}{}
 				if err := Kwargs(kwargs).Go(&val); err != nil {
 					t.Fatal(err)
@@ -120,23 +121,23 @@ func TestStarKwargs2Go(t *testing.T) {
 			},
 		},
 		{
-			name: "implicit require and explicit optional",
+			name: "implicit optional and explicit required",
 			kwargs: []starlark.Tuple{
-				{starlark.String("a"), starlark.String("hello")},
+				{starlark.String("b"), starlark.MakeInt(32)},
 			},
 			eval: func(t *testing.T, kwargs []starlark.Tuple) {
 				val := struct {
 					A string `name:"a"`
-					B int64  `name:"b" optional:"true"`
+					B int64  `name:"b" required:"true"`
 				}{}
 				if err := Kwargs(kwargs).Go(&val); err != nil {
 					t.Fatal(err)
 				}
-				if val.A != "hello" {
-					t.Errorf("unexpected value: %s", val.A)
+				if val.A != "" {
+					t.Errorf("unexpected value for `a`: %s", val.A)
 				}
-				if val.B != 0 {
-					t.Errorf("unexpected value: %d", val.B)
+				if val.B != 32 {
+					t.Errorf("unexpected value for `b`: %d", val.B)
 				}
 			},
 		},

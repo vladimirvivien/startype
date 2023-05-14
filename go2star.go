@@ -201,19 +201,7 @@ func goToStarlark(gov interface{}, starval interface{}) error {
 		return nil
 
 	case reflect.Slice, reflect.Array:
-		makeTuple := func() ([]starlark.Value, error) {
-			tuple := make([]starlark.Value, goval.Len())
-			for i := 0; i < goval.Len(); i++ {
-				var elem starlark.Value
-				if err := goToStarlark(goval.Index(i).Interface(), &elem); err != nil {
-					return nil, err
-				}
-				tuple[i] = elem
-			}
-			return tuple, nil
-		}
-
-		result, err := makeTuple()
+		result, err := makeTuple(goval)
 		if err != nil {
 			return err
 		}
@@ -233,45 +221,20 @@ func goToStarlark(gov interface{}, starval interface{}) error {
 		return nil
 
 	case reflect.Map:
-		makeDict := func() (*starlark.Dict, error) {
-			dict := starlark.NewDict(goval.Len())
-			iter := goval.MapRange()
-
-			for iter.Next() {
-				// convert key
-				var key starlark.Value
-				if err := goToStarlark(iter.Key().Interface(), &key); err != nil {
-					return nil, fmt.Errorf("failed map key conversion: %s", err)
-				}
-
-				// convert value
-				var val starlark.Value
-				if err := goToStarlark(iter.Value().Interface(), &val); err != nil {
-					return nil, fmt.Errorf("failed map value conversion: %s", err)
-				}
-
-				if err := dict.SetKey(key, val); err != nil {
-					return nil, fmt.Errorf("failed to set map value with key: %s", key)
-				}
-			}
-
-			return dict, nil
-		}
-
-		result, err := makeDict()
+		dict, err := goMapToDict(goval)
 		if err != nil {
 			return err
 		}
 
-		switch val := starval.(type) {
-		case *starlark.Value:
-			*val = result
+		switch dictVal := starval.(type) {
 		case *starlark.Dict:
-			*val = *result //nolint:govet
+			*dictVal = *dict //nolint:govet
 		case **starlark.Dict:
-			*val = result
+			*dictVal = dict
+		case *starlark.Value:
+			*dictVal = dict
 		default:
-			return fmt.Errorf("target type %T: must be *starlark.Dict or *starlark.Value", starval)
+			return fmt.Errorf("want target type *starlark.Dict, got: %T", dictVal)
 		}
 
 		return nil
@@ -315,6 +278,42 @@ func goToStarlark(gov interface{}, starval interface{}) error {
 
 }
 
+func makeTuple(sliceVal reflect.Value) ([]starlark.Value, error) {
+	tuple := make([]starlark.Value, sliceVal.Len())
+	for i := 0; i < sliceVal.Len(); i++ {
+		var elem starlark.Value
+		if err := goToStarlark(sliceVal.Index(i).Interface(), &elem); err != nil {
+			return nil, err
+		}
+		tuple[i] = elem
+	}
+	return tuple, nil
+}
+
+func goMapToDict(mapVal reflect.Value) (*starlark.Dict, error) {
+	iter := mapVal.MapRange()
+	dict := starlark.NewDict(mapVal.Len())
+
+	for iter.Next() {
+		// convert key
+		var key starlark.Value
+		if err := goToStarlark(iter.Key().Interface(), &key); err != nil {
+			return nil, fmt.Errorf("GoToStarlrk: failed map key conversion: %s", err)
+		}
+
+		// convert value
+		var val starlark.Value
+		if err := goToStarlark(iter.Value().Interface(), &val); err != nil {
+			return nil, fmt.Errorf("GoToStarlark: failed map value conversion: %s", err)
+		}
+
+		if err := dict.SetKey(key, val); err != nil {
+			return nil, fmt.Errorf("GoToStarlark: failed to set map value with key: %s", key)
+		}
+	}
+	return dict, nil
+}
+
 func goStructToStringDict(goval reflect.Value) (starlark.StringDict, error) {
 	gotype := goval.Type()
 	stringDict := make(starlark.StringDict)
@@ -335,7 +334,7 @@ func goStructToStringDict(goval reflect.Value) (starlark.StringDict, error) {
 		var fval starlark.Value
 
 		if err := goToStarlark(goval.Field(i).Interface(), &fval); err != nil {
-			return nil, fmt.Errorf("failed struct field conversion: %s", err)
+			return nil, fmt.Errorf("GoToStarlark: failed struct field conversion: %s", err)
 		}
 		stringDict[fname] = fval
 	}
