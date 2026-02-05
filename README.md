@@ -9,7 +9,8 @@ Startype makes it easy to automatically convert (two-way) between Go types and S
 * Convert Go `slice`, `array`, `map`, and `struct` types to compatible Starlark types
 * Convert Starlark `Dict`, `StringDict`, `List`, `Set`, and `StarlarkStruct` to compatible Go types
 * Map Starlark keyword args (from built-in functions) to Go struct values
-* Support for type pointers and and empty interface (any) types
+* Map both positional and keyword args to Go struct values (replacement for `starlark.UnpackArgs`)
+* Support for type pointers and empty interface (any) types
 
 ## Examples
 
@@ -160,6 +161,82 @@ func main() {
 	}
 
     fmt.Printl(args.Message) // prints hello
+}
+```
+
+## Combined positional and keyword argument processing
+
+For more flexible argument handling (similar to `starlark.UnpackArgs`), Startype provides the `Args()` function that handles both positional arguments and keyword arguments. This is useful when implementing Starlark built-in functions that accept arguments in either style.
+
+```go
+func myBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+    var params struct {
+        Path     string `name:"path" position:"0" required:"true"`
+        Encoding string `name:"encoding" position:"1"`
+        Force    bool   `name:"force" position:"2"`
+    }
+    if err := startype.Args(args, kwargs).Go(&params); err != nil {
+        return nil, err
+    }
+
+    // params.Path, params.Encoding, params.Force are now populated
+    // ...
+}
+```
+
+### Struct tags for Args
+
+| Tag | Example | Description |
+|-----|---------|-------------|
+| `name` | `name:"path"` | Keyword argument name |
+| `position` | `position:"0"` | Positional argument index (0-based) |
+| `required` | `required:"true"` | Argument must be provided (positionally or by keyword) |
+
+A field can have both `name` and `position` tags to accept either calling style. If both a positional argument and a keyword argument provide a value for the same field, the keyword argument wins.
+
+### Examples
+
+Positional arguments only:
+```go
+// Starlark call: my_func("/path/to/file", "utf-8")
+var params struct {
+    Path     string `name:"path" position:"0"`
+    Encoding string `name:"encoding" position:"1"`
+}
+startype.Args(args, kwargs).Go(&params)
+// params.Path = "/path/to/file", params.Encoding = "utf-8"
+```
+
+Keyword arguments only:
+```go
+// Starlark call: my_func(path="/path/to/file", encoding="utf-8")
+var params struct {
+    Path     string `name:"path" position:"0"`
+    Encoding string `name:"encoding" position:"1"`
+}
+startype.Args(args, kwargs).Go(&params)
+// params.Path = "/path/to/file", params.Encoding = "utf-8"
+```
+
+Mixed positional and keyword:
+```go
+// Starlark call: my_func("/path/to/file", encoding="utf-8")
+var params struct {
+    Path     string `name:"path" position:"0"`
+    Encoding string `name:"encoding" position:"1"`
+}
+startype.Args(args, kwargs).Go(&params)
+// params.Path = "/path/to/file", params.Encoding = "utf-8"
+```
+
+Required arguments:
+```go
+var params struct {
+    Path     string `name:"path" position:"0" required:"true"`
+    Encoding string `name:"encoding" position:"1"` // optional, defaults to zero value
+}
+if err := startype.Args(args, kwargs).Go(&params); err != nil {
+    // Error if path not provided: "missing required argument: path"
 }
 ```
 
