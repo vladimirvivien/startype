@@ -292,12 +292,12 @@ func TestGoToStarlark(t *testing.T) {
 				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
-				tuple := starval.(starlark.Tuple)
-				if tuple.Len() != 3 {
-					t.Errorf("unexpected tuple length %d", tuple.Len())
+				list := starval.(*starlark.List)
+				if list.Len() != 3 {
+					t.Errorf("unexpected list length %d", list.Len())
 				}
 
-				intVal, _ := tuple.Index(2).(starlark.Int).Int64()
+				intVal, _ := list.Index(2).(starlark.Int).Int64()
 				if intVal != math.MaxInt8 {
 					t.Errorf("unexpected int value: %d", intVal)
 				}
@@ -606,6 +606,88 @@ func TestGoToStarlark(t *testing.T) {
 
 				if val.String() != `"Hello World!"` {
 					t.Errorf("unexpected value for starlark.Dict value: %s", val.String())
+				}
+			},
+		},
+		{
+			name:  "nil-to-starlark-value",
+			goVal: nil,
+			eval: func(t *testing.T, goVal interface{}) {
+				var starval starlark.Value
+				if err := Go(nil).Starlark(&starval); err != nil {
+					t.Fatal(err)
+				}
+				if starval != starlark.None {
+					t.Errorf("expected starlark.None, got %v (%s)", starval, starval.Type())
+				}
+			},
+		},
+		{
+			name:  "slice-to-starlark-value",
+			goVal: []string{"a", "b", "c"},
+			eval: func(t *testing.T, goVal interface{}) {
+				var starval starlark.Value
+				if err := Go(goVal).Starlark(&starval); err != nil {
+					t.Fatal(err)
+				}
+				if starval.Type() != "list" {
+					t.Errorf("expected list type, got %s", starval.Type())
+				}
+				list := starval.(*starlark.List)
+				if list.Len() != 3 {
+					t.Errorf("expected 3 elements, got %d", list.Len())
+				}
+			},
+		},
+		{
+			name:  "zero-int-to-starlark",
+			goVal: 0,
+			eval: func(t *testing.T, goVal interface{}) {
+				var starval starlark.Value
+				if err := Go(0).Starlark(&starval); err != nil {
+					t.Fatal(err)
+				}
+				intVal, ok := starval.(starlark.Int)
+				if !ok {
+					t.Fatalf("expected starlark.Int, got %T", starval)
+				}
+				v, _ := intVal.Int64()
+				if v != 0 {
+					t.Errorf("expected 0, got %d", v)
+				}
+			},
+		},
+		{
+			name:  "empty-string-to-starlark",
+			goVal: "",
+			eval: func(t *testing.T, goVal interface{}) {
+				var starval starlark.Value
+				if err := Go("").Starlark(&starval); err != nil {
+					t.Fatal(err)
+				}
+				strVal, ok := starval.(starlark.String)
+				if !ok {
+					t.Fatalf("expected starlark.String, got %T", starval)
+				}
+				if string(strVal) != "" {
+					t.Errorf("expected empty string, got %q", string(strVal))
+				}
+			},
+		},
+		{
+			name:  "false-to-starlark",
+			goVal: false,
+			eval: func(t *testing.T, goVal interface{}) {
+				var starval starlark.Value
+				if err := Go(false).Starlark(&starval); err != nil {
+					t.Fatal(err)
+				}
+				boolVal, ok := starval.(starlark.Bool)
+				if !ok {
+					t.Fatalf("expected starlark.Bool, got %T", starval)
+				}
+				if bool(boolVal) != false {
+					t.Errorf("expected false, got true")
 				}
 			},
 		},

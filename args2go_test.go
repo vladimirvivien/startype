@@ -405,6 +405,79 @@ func TestGoToArgsToGo2(t *testing.T) {
 	}
 }
 
+func TestArgsPassthroughTypes(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   starlark.Tuple
+		kwargs []starlark.Tuple
+		eval   func(*testing.T, starlark.Tuple, []starlark.Tuple)
+	}{
+		{
+			name: "callable-positional",
+			args: starlark.Tuple{
+				starlark.NewBuiltin("myfn", func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+					return starlark.None, nil
+				}),
+				starlark.MakeInt(5),
+			},
+			kwargs: nil,
+			eval: func(t *testing.T, args starlark.Tuple, kwargs []starlark.Tuple) {
+				var p struct {
+					Fn      starlark.Callable `name:"fn" position:"0" required:"true"`
+					Retries int               `name:"retries" position:"1"`
+				}
+				if err := Args(args, kwargs).Go(&p); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if p.Fn.Name() != "myfn" {
+					t.Fatalf("unexpected callable name: %s", p.Fn.Name())
+				}
+				if p.Retries != 5 {
+					t.Fatalf("unexpected retries: %d", p.Retries)
+				}
+			},
+		},
+		{
+			name:   "value-accepts-any",
+			args:   starlark.Tuple{starlark.NewList([]starlark.Value{starlark.String("a")})},
+			kwargs: nil,
+			eval: func(t *testing.T, args starlark.Tuple, kwargs []starlark.Tuple) {
+				var p struct {
+					Data starlark.Value `name:"data" position:"0" required:"true"`
+				}
+				if err := Args(args, kwargs).Go(&p); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if p.Data.Type() != "list" {
+					t.Fatalf("unexpected type: %s", p.Data.Type())
+				}
+			},
+		},
+		{
+			name:   "bytes-to-slice",
+			args:   starlark.Tuple{starlark.Bytes("binary data")},
+			kwargs: nil,
+			eval: func(t *testing.T, args starlark.Tuple, kwargs []starlark.Tuple) {
+				var p struct {
+					Data []byte `name:"data" position:"0" required:"true"`
+				}
+				if err := Args(args, kwargs).Go(&p); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if string(p.Data) != "binary data" {
+					t.Fatalf("unexpected data: %s", p.Data)
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			test.eval(t, test.args, test.kwargs)
+		})
+	}
+}
+
 func TestArgsInvalidInputs(t *testing.T) {
 	t.Run("non-pointer dest", func(t *testing.T) {
 		var val struct {

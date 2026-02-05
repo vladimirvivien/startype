@@ -122,8 +122,17 @@ func GoStructToStringDict(gostruct interface{}) (starlark.StringDict, error) {
 //	    []T, [n]T			-- starlark.Tuple
 //		map[K]T				-- *starlark.Dict
 func goToStarlark(gov interface{}, starval interface{}) error {
+	if gov == nil {
+		if val, ok := starval.(*starlark.Value); ok {
+			*val = starlark.None
+		}
+		return nil
+	}
 	goval := reflect.ValueOf(gov)
-	if !goval.IsValid() || goval.IsZero() {
+	if !goval.IsValid() {
+		if val, ok := starval.(*starlark.Value); ok {
+			*val = starlark.None
+		}
 		return nil
 	}
 
@@ -208,14 +217,19 @@ func goToStarlark(gov interface{}, starval interface{}) error {
 
 		switch val := starval.(type) {
 		case *starlark.Value:
-			*val = starlark.Tuple(result)
+			*val = starlark.NewList(result)
 		case *starlark.Tuple:
 			*val = result
 		case **starlark.Tuple:
 			tupVal := starlark.Tuple(result)
 			*val = &tupVal
+		case *starlark.List:
+			*val = *starlark.NewList(result)
+		case **starlark.List:
+			listVal := starlark.NewList(result)
+			*val = listVal
 		default:
-			return fmt.Errorf("target type %T: must be *starlark.Tuple or *starlark.Value", starval)
+			return fmt.Errorf("target type %T: must be *starlark.Tuple, *starlark.List, or *starlark.Value", starval)
 		}
 
 		return nil

@@ -71,6 +71,36 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 
 	gotype := goval.Type()
 
+	// Handle passthrough types - assign directly without conversion
+	// Note: Check Callable before Value since Callable embeds Value
+
+	// starlark.Callable - accept callable values
+	starlarkCallableType := reflect.TypeOf((*starlark.Callable)(nil)).Elem()
+	if gotype == starlarkCallableType {
+		if callable, ok := srcVal.(starlark.Callable); ok {
+			goval.Set(reflect.ValueOf(callable))
+			return nil
+		}
+		return fmt.Errorf("value is not callable: got %s", srcVal.Type())
+	}
+
+	// starlark.Value - accept any Starlark value
+	starlarkValueType := reflect.TypeOf((*starlark.Value)(nil)).Elem()
+	if gotype == starlarkValueType {
+		goval.Set(reflect.ValueOf(srcVal))
+		return nil
+	}
+
+	// starlark.Bytes - pass through if target is starlark.Bytes
+	starlarkBytesType := reflect.TypeOf(starlark.Bytes(""))
+	if gotype == starlarkBytesType {
+		if bytes, ok := srcVal.(starlark.Bytes); ok {
+			goval.Set(reflect.ValueOf(bytes))
+			return nil
+		}
+		return fmt.Errorf("value is not bytes: got %s", srcVal.Type())
+	}
+
 	var starval reflect.Value
 	srcType := srcVal.Type()
 
@@ -193,34 +223,58 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 		return nil
 
 	case "list":
-		if gotype.Kind() != reflect.Slice && gotype.Kind() != reflect.Array {
-			return fmt.Errorf("target type must be slice or array")
-		}
 		listVal, ok := srcVal.(*starlark.List)
 		if !ok {
 			return fmt.Errorf("failed to assert %T as *starlark.List", srcVal)
 		}
-		goval.Set(reflect.MakeSlice(gotype, listVal.Len(), listVal.Len()))
-		for i := 0; i < listVal.Len(); i++ {
-			if err := starlarkToGo(listVal.Index(i), goval.Index(i)); err != nil {
-				return err
+		switch gotype.Kind() {
+		case reflect.Slice, reflect.Array:
+			goval.Set(reflect.MakeSlice(gotype, listVal.Len(), listVal.Len()))
+			for i := 0; i < listVal.Len(); i++ {
+				if err := starlarkToGo(listVal.Index(i), goval.Index(i)); err != nil {
+					return err
+				}
 			}
+		case reflect.Interface:
+			result := make([]any, listVal.Len())
+			for i := 0; i < listVal.Len(); i++ {
+				elem := reflect.New(reflect.TypeOf((*any)(nil)).Elem()).Elem()
+				if err := starlarkToGo(listVal.Index(i), elem); err != nil {
+					return err
+				}
+				result[i] = elem.Interface()
+			}
+			goval.Set(reflect.ValueOf(result))
+		default:
+			return fmt.Errorf("target type must be slice, array, or any")
 		}
 		return nil
 
 	case "tuple":
-		if gotype.Kind() != reflect.Slice && gotype.Kind() != reflect.Array {
-			return fmt.Errorf("target type must be slice or array")
-		}
 		tupVal, ok := srcVal.(starlark.Tuple)
 		if !ok {
 			return fmt.Errorf("failed to assert %T as starlark.Tuple", srcVal)
 		}
-		goval.Set(reflect.MakeSlice(gotype, tupVal.Len(), tupVal.Len()))
-		for i := 0; i < tupVal.Len(); i++ {
-			if err := starlarkToGo(tupVal.Index(i), goval.Index(i)); err != nil {
-				return err
+		switch gotype.Kind() {
+		case reflect.Slice, reflect.Array:
+			goval.Set(reflect.MakeSlice(gotype, tupVal.Len(), tupVal.Len()))
+			for i := 0; i < tupVal.Len(); i++ {
+				if err := starlarkToGo(tupVal.Index(i), goval.Index(i)); err != nil {
+					return err
+				}
 			}
+		case reflect.Interface:
+			result := make([]any, tupVal.Len())
+			for i := 0; i < tupVal.Len(); i++ {
+				elem := reflect.New(reflect.TypeOf((*any)(nil)).Elem()).Elem()
+				if err := starlarkToGo(tupVal.Index(i), elem); err != nil {
+					return err
+				}
+				result[i] = elem.Interface()
+			}
+			goval.Set(reflect.ValueOf(result))
+		default:
+			return fmt.Errorf("target type must be slice, array, or any")
 		}
 		return nil
 
@@ -235,13 +289,17 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 			return fmt.Errorf("failed to assert %T as *starlark.Dict", srcVal)
 		}
 
-		// map target type
+		// map target type — when target is interface{}, create a concrete map
+		// and use mapVal to track the actual map for SetMapIndex calls
+		var mapVal reflect.Value
 		switch gotype.Kind() {
 		case reflect.Map:
-			goval.Set(reflect.MakeMapWithSize(gotype, dict.Len()))
+			mapVal = reflect.MakeMapWithSize(gotype, dict.Len())
+			goval.Set(mapVal)
 		case reflect.Interface:
 			gotype = reflect.TypeOf(map[any]any{})
-			goval.Set(reflect.MakeMapWithSize(gotype, dict.Len()))
+			mapVal = reflect.MakeMapWithSize(gotype, dict.Len())
+			goval.Set(mapVal)
 		case reflect.Pointer:
 			goval.Set(reflect.New(gotype.Elem()))
 			return starlarkToGo(dict, goval.Elem())
@@ -278,29 +336,67 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 			}
 
 			// store map value
-			goval.SetMapIndex(goMapKey, goMapElem)
+			mapVal.SetMapIndex(goMapKey, goMapElem)
 		}
 		return nil
 
 	case "set":
-		if gotype.Kind() != reflect.Slice && gotype.Kind() != reflect.Array {
-			return fmt.Errorf("target type must be slice or array")
-		}
 		setVal, ok := srcVal.(*starlark.Set)
 		if !ok {
-			return fmt.Errorf("failed to assert %T as starlark.Tuple", srcVal)
+			return fmt.Errorf("failed to assert %T as starlark.Set", srcVal)
 		}
-		goval.Set(reflect.MakeSlice(gotype, setVal.Len(), setVal.Len()))
-		var setItem starlark.Value
-		iter := setVal.Iterate()
-		i := 0
-		for iter.Next(&setItem) {
-			if err := starlarkToGo(setItem, goval.Index(i)); err != nil {
-				return err
+		switch gotype.Kind() {
+		case reflect.Slice, reflect.Array:
+			goval.Set(reflect.MakeSlice(gotype, setVal.Len(), setVal.Len()))
+			var setItem starlark.Value
+			iter := setVal.Iterate()
+			i := 0
+			for iter.Next(&setItem) {
+				if err := starlarkToGo(setItem, goval.Index(i)); err != nil {
+					return err
+				}
+				i++
 			}
-			i++
+		case reflect.Interface:
+			result := make([]any, setVal.Len())
+			var setItem starlark.Value
+			iter := setVal.Iterate()
+			i := 0
+			for iter.Next(&setItem) {
+				elem := reflect.New(reflect.TypeOf((*any)(nil)).Elem()).Elem()
+				if err := starlarkToGo(setItem, elem); err != nil {
+					return err
+				}
+				result[i] = elem.Interface()
+				i++
+			}
+			goval.Set(reflect.ValueOf(result))
+		default:
+			return fmt.Errorf("target type must be slice, array, or any")
 		}
 		return nil
+
+	case "bytes":
+		bytesVal, ok := srcVal.(starlark.Bytes)
+		if !ok {
+			return fmt.Errorf("failed to assert %T as starlark.Bytes", srcVal)
+		}
+
+		switch gotype.Kind() {
+		case reflect.Slice:
+			if gotype.Elem().Kind() == reflect.Uint8 {
+				// Convert starlark.Bytes → []byte
+				goval.Set(reflect.ValueOf([]byte(bytesVal)))
+				return nil
+			}
+			return fmt.Errorf("starlark.Bytes to Go: slice element must be uint8, got %s", gotype.Elem().Kind())
+		case reflect.Interface:
+			// For `any` target, convert to []byte
+			goval.Set(reflect.ValueOf([]byte(bytesVal)))
+			return nil
+		default:
+			return fmt.Errorf("starlark.Bytes to Go: target type (%s) must be []byte or any", gotype.Kind())
+		}
 
 	case "struct":
 		if gotype.Kind() != reflect.Struct {
@@ -344,6 +440,13 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 			}
 		}
 		return nil
+	case "NoneType":
+		if gotype.Kind() == reflect.Interface {
+			// leave as zero value (nil) for interface targets
+			return nil
+		}
+		return fmt.Errorf("NoneType: target type (%s) must be any", gotype.Kind())
+
 	default:
 		return fmt.Errorf("unsupported type: %s", srcType)
 	}

@@ -15,7 +15,7 @@ Startype makes it easy to automatically convert (two-way) between Go types and S
 ## Examples
 
 ### Convert Go value to Starlark value
-The following converts a Go `struct` to a (comptible) `*starlarkstruct.Struct` value:
+The following converts a Go `struct` to a (compatible) `*starlarkstruct.Struct` value:
 
 ```go
 func main() {
@@ -80,7 +80,7 @@ func main() {
 		Count: 24,
 	}
 
-	star := make.Struct
+	var star starlarkstruct.Struct
 	if err := startype.Go(data).Starlark(&star); err != nil {
 		t.Fatal(err)
 	}
@@ -111,12 +111,12 @@ func main() {
         Message string      `name:"mymsg1"`
 	}
 
-	if err := Starlark(&star).Go(&goData); err != nil {
-		t.Errorf("conversion failed: %s", err)
+	if err := startype.Starlark(&star).Go(&godata); err != nil {
+		log.Fatalf("conversion failed: %s", err)
 	}
 
 	if godata.Message != "World!" {
-		log.Errorf("unexpected go struct field value: %s", godata.Message)
+		log.Fatalf("unexpected go struct field value: %s", godata.Message)
 	}
 }
 ```
@@ -139,11 +139,11 @@ func main() {
 		t.Fatal(err)
 	}
 
-    fmt.Printl(args.Message) // prints hello
+    fmt.Println(args.Message) // prints hello
 }
 ```
 
-An argument can be marked as optional to avoid error if it is not provided. For instance, 
+An argument can be marked as optional to avoid error if it is not provided. For instance,
 if argument `cnt` is not provided in the `kwargs` tuple, function `KwargsToGo` will not report an error.
 
 ```go
@@ -154,13 +154,13 @@ func main() {
     }
     var args struct {
         Message string   `name:"msg"`
-        Count int64      `name:"cnt optional:true"`
+        Count int64      `name:"cnt" optional:"true"`
     }
-	if err := startype.Kwargs(kwargs).Go(&val); err != nil {
-		t.Fatal(err)
+	if err := startype.Kwargs(kwargs).Go(&args); err != nil {
+		log.Fatal(err)
 	}
 
-    fmt.Printl(args.Message) // prints hello
+    fmt.Println(args.Message) // prints hello
 }
 ```
 

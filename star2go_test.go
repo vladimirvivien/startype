@@ -16,6 +16,110 @@ func TestStarlarkToGo(t *testing.T) {
 		starVal starlark.Value
 		eval    func(*testing.T, starlark.Value)
 	}{
+		// Passthrough types - starlark.Value
+		{
+			name:    "value-passthrough-string",
+			starVal: starlark.String("hello"),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest starlark.Value
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if dest != starlark.String("hello") {
+					t.Fatalf("unexpected value: %v", dest)
+				}
+				if dest.Type() != "string" {
+					t.Fatalf("unexpected type: %s", dest.Type())
+				}
+			},
+		},
+		{
+			name:    "value-passthrough-list",
+			starVal: starlark.NewList([]starlark.Value{starlark.MakeInt(1), starlark.MakeInt(2)}),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest starlark.Value
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if dest.Type() != "list" {
+					t.Fatalf("unexpected type: %s", dest.Type())
+				}
+				list := dest.(*starlark.List)
+				if list.Len() != 2 {
+					t.Fatalf("unexpected list length: %d", list.Len())
+				}
+			},
+		},
+		// Passthrough types - starlark.Callable
+		{
+			name: "callable-passthrough",
+			starVal: starlark.NewBuiltin("testfn", func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+				return starlark.None, nil
+			}),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest starlark.Callable
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if dest.Name() != "testfn" {
+					t.Fatalf("unexpected callable name: %s", dest.Name())
+				}
+			},
+		},
+		{
+			name:    "callable-error-on-non-callable",
+			starVal: starlark.String("not a function"),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest starlark.Callable
+				err := Starlark(val).Go(&dest)
+				if err == nil {
+					t.Fatal("expected error for non-callable value")
+				}
+				if !strings.Contains(err.Error(), "not callable") {
+					t.Fatalf("unexpected error message: %s", err)
+				}
+			},
+		},
+		// Passthrough types - starlark.Bytes
+		{
+			name:    "bytes-passthrough",
+			starVal: starlark.Bytes("hello bytes"),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest starlark.Bytes
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if dest != starlark.Bytes("hello bytes") {
+					t.Fatalf("unexpected bytes value: %s", dest)
+				}
+			},
+		},
+		{
+			name:    "bytes-to-slice",
+			starVal: starlark.Bytes("hello bytes"),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest []byte
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if string(dest) != "hello bytes" {
+					t.Fatalf("unexpected []byte value: %s", dest)
+				}
+			},
+		},
+		{
+			name:    "bytes-to-any",
+			starVal: starlark.Bytes("hello bytes"),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest any
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if string(dest.([]byte)) != "hello bytes" {
+					t.Fatalf("unexpected any ([]byte) value: %v", dest)
+				}
+			},
+		},
 		{
 			name:    "addressability",
 			starVal: starlark.Bool(true),
@@ -523,6 +627,65 @@ func TestStarlarkToGo(t *testing.T) {
 				}
 				if slice[1].(int64) != math.MaxInt32 {
 					t.Fatalf("unexpected slice[1] value: %v, want %d", slice[1], math.MaxInt32)
+				}
+			},
+		},
+		{
+			name:    "none-to-any",
+			starVal: starlark.None,
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest any
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				if dest != nil {
+					t.Fatalf("expected nil, got %v", dest)
+				}
+			},
+		},
+		{
+			name:    "list-to-any",
+			starVal: starlark.NewList([]starlark.Value{starlark.String("hello"), starlark.MakeInt(42)}),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest any
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				result, ok := dest.([]any)
+				if !ok {
+					t.Fatalf("expected []any, got %T", dest)
+				}
+				if len(result) != 2 {
+					t.Fatalf("expected 2 elements, got %d", len(result))
+				}
+				if result[0].(string) != "hello" {
+					t.Fatalf("expected 'hello', got %v", result[0])
+				}
+				if result[1].(int64) != 42 {
+					t.Fatalf("expected 42, got %v", result[1])
+				}
+			},
+		},
+		{
+			name:    "tuple-to-any",
+			starVal: starlark.Tuple([]starlark.Value{starlark.String("world"), starlark.MakeInt(99)}),
+			eval: func(t *testing.T, val starlark.Value) {
+				var dest any
+				if err := Starlark(val).Go(&dest); err != nil {
+					t.Fatalf("failed to convert: %s", err)
+				}
+				result, ok := dest.([]any)
+				if !ok {
+					t.Fatalf("expected []any, got %T", dest)
+				}
+				if len(result) != 2 {
+					t.Fatalf("expected 2 elements, got %d", len(result))
+				}
+				if result[0].(string) != "world" {
+					t.Fatalf("expected 'world', got %v", result[0])
+				}
+				if result[1].(int64) != 99 {
+					t.Fatalf("expected 99, got %v", result[1])
 				}
 			},
 		},
