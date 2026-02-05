@@ -246,7 +246,7 @@ func TestStarlarkToGo(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to convert starlark to go value: %s", err)
 				}
-				if "Hello World!" != strings.Join(slice, " ") {
+				if strings.Join(slice, " ") != "Hello World!" {
 					t.Fatalf("unexpected string value: %v", slice)
 				}
 			},
@@ -819,7 +819,7 @@ func TestStarGo(t *testing.T) {
 				if err := Starlark(val).Go(&slice); err != nil {
 					t.Fatalf("failed to convert starlark to go value: %s", err)
 				}
-				if "Hello World!" != strings.Join(slice, " ") {
+				if strings.Join(slice, " ") != "Hello World!" {
 					t.Fatalf("unexpected string value: %v", slice)
 				}
 			},

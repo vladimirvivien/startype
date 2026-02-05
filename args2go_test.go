@@ -258,8 +258,8 @@ func TestStarArgs2Go(t *testing.T) {
 			kwargs: []starlark.Tuple{
 				{starlark.String("env"), func() *starlark.Dict {
 					d := starlark.NewDict(2)
-					d.SetKey(starlark.String("HOME"), starlark.String("/home/user"))
-					d.SetKey(starlark.String("PATH"), starlark.String("/usr/bin"))
+					_ = d.SetKey(starlark.String("HOME"), starlark.String("/home/user"))
+					_ = d.SetKey(starlark.String("PATH"), starlark.String("/usr/bin"))
 					return d
 				}()},
 			},
@@ -366,8 +366,8 @@ func TestGoToArgsToGo2(t *testing.T) {
 
 	// Build Starlark values
 	envDict := starlark.NewDict(2)
-	envDict.SetKey(starlark.String("HOME"), starlark.String("/home/user"))
-	envDict.SetKey(starlark.String("PATH"), starlark.String("/usr/bin"))
+	_ = envDict.SetKey(starlark.String("HOME"), starlark.String("/home/user"))
+	_ = envDict.SetKey(starlark.String("PATH"), starlark.String("/usr/bin"))
 
 	// args+kwargs -> Go struct
 	var arg execArgs
