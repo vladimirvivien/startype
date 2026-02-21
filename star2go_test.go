@@ -1060,7 +1060,7 @@ func TestToGoValue(t *testing.T) {
 		{
 			name:    "none",
 			starVal: starlark.None,
-			check:   func(t *testing.T, v any) {
+			check: func(t *testing.T, v any) {
 				if v != nil {
 					t.Errorf("expected nil, got %v", v)
 				}
@@ -1069,7 +1069,7 @@ func TestToGoValue(t *testing.T) {
 		{
 			name:    "bool",
 			starVal: starlark.True,
-			check:   func(t *testing.T, v any) {
+			check: func(t *testing.T, v any) {
 				if v != true {
 					t.Errorf("expected true, got %v", v)
 				}
@@ -1078,7 +1078,7 @@ func TestToGoValue(t *testing.T) {
 		{
 			name:    "int",
 			starVal: starlark.MakeInt(42),
-			check:   func(t *testing.T, v any) {
+			check: func(t *testing.T, v any) {
 				if v.(int64) != 42 {
 					t.Errorf("expected 42, got %v", v)
 				}
@@ -1087,7 +1087,7 @@ func TestToGoValue(t *testing.T) {
 		{
 			name:    "float",
 			starVal: starlark.Float(3.14),
-			check:   func(t *testing.T, v any) {
+			check: func(t *testing.T, v any) {
 				if v.(float64) != 3.14 {
 					t.Errorf("expected 3.14, got %v", v)
 				}
@@ -1096,7 +1096,7 @@ func TestToGoValue(t *testing.T) {
 		{
 			name:    "string",
 			starVal: starlark.String("hello"),
-			check:   func(t *testing.T, v any) {
+			check: func(t *testing.T, v any) {
 				if v.(string) != "hello" {
 					t.Errorf("expected hello, got %v", v)
 				}
@@ -1105,7 +1105,7 @@ func TestToGoValue(t *testing.T) {
 		{
 			name:    "list",
 			starVal: starlark.NewList([]starlark.Value{starlark.MakeInt(1), starlark.String("two")}),
-			check:   func(t *testing.T, v any) {
+			check: func(t *testing.T, v any) {
 				list := v.([]any)
 				if len(list) != 2 {
 					t.Fatalf("expected 2 elements, got %d", len(list))
@@ -1121,7 +1121,7 @@ func TestToGoValue(t *testing.T) {
 		{
 			name:    "tuple",
 			starVal: starlark.Tuple{starlark.MakeInt(10), starlark.String("ten")},
-			check:   func(t *testing.T, v any) {
+			check: func(t *testing.T, v any) {
 				list := v.([]any)
 				if len(list) != 2 {
 					t.Fatalf("expected 2 elements, got %d", len(list))
