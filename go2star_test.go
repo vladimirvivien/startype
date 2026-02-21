@@ -325,7 +325,7 @@ func TestGoToStarlark(t *testing.T) {
 			name:  "dict-strig-string",
 			goVal: map[string]string{"msg": "hello", "target": "world"},
 			eval: func(t *testing.T, goVal interface{}) {
-				var starval starlark.Dict
+				var starval *starlark.Dict
 				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
@@ -347,7 +347,7 @@ func TestGoToStarlark(t *testing.T) {
 			name:  "dict-string-int",
 			goVal: map[string]int{"one": 12, "two": math.MaxInt8, "three": math.MaxInt64},
 			eval: func(t *testing.T, goVal interface{}) {
-				var starval starlark.Dict
+				var starval *starlark.Dict
 				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
@@ -368,7 +368,7 @@ func TestGoToStarlark(t *testing.T) {
 			name:  "dict-any-mix",
 			goVal: map[any]any{"one": "12", "two": math.MaxInt8, 3: math.MaxInt64},
 			eval: func(t *testing.T, goVal interface{}) {
-				var starval starlark.Dict
+				var starval *starlark.Dict
 				if err := Go(goVal).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
@@ -614,7 +614,7 @@ func TestGoToStarlark(t *testing.T) {
 			goVal: nil,
 			eval: func(t *testing.T, goVal interface{}) {
 				var starval starlark.Value
-				if err := Go(nil).Starlark(&starval); err != nil {
+				if err := Go[any](nil).Starlark(&starval); err != nil {
 					t.Fatal(err)
 				}
 				if starval != starlark.None {
@@ -783,7 +783,7 @@ func TestGoToStarlark(t *testing.T) {
 			name:  "set-string",
 			goVal: []string{"Hello", "World!"},
 			eval: func(t *testing.T, goVal interface{}) {
-				var starval starlark.Set
+				var starval *starlark.Set
 				if err := Go(goVal).StarlarkSet(&starval); err != nil {
 					t.Fatal(err)
 				}
@@ -895,5 +895,372 @@ func TestGo2Star2Go(t *testing.T) {
 
 	if goData.Count != 24 {
 		t.Errorf("unexpected go struct field value: %d", goData.Count)
+	}
+}
+
+func TestToStarlarkValue(t *testing.T) {
+	tests := []struct {
+		name   string
+		goVal  any
+		check  func(t *testing.T, v starlark.Value)
+		hasErr bool
+	}{
+		{
+			name:  "nil",
+			goVal: nil,
+			check: func(t *testing.T, v starlark.Value) {
+				if v != starlark.None {
+					t.Errorf("expected None, got %v", v)
+				}
+			},
+		},
+		{
+			name:  "bool-true",
+			goVal: true,
+			check: func(t *testing.T, v starlark.Value) {
+				if v != starlark.True {
+					t.Errorf("expected True, got %v", v)
+				}
+			},
+		},
+		{
+			name:  "bool-false",
+			goVal: false,
+			check: func(t *testing.T, v starlark.Value) {
+				if v != starlark.False {
+					t.Errorf("expected False, got %v", v)
+				}
+			},
+		},
+		{
+			name:  "int",
+			goVal: 42,
+			check: func(t *testing.T, v starlark.Value) {
+				i, ok := v.(starlark.Int)
+				if !ok {
+					t.Fatalf("expected starlark.Int, got %T", v)
+				}
+				val, _ := i.Int64()
+				if val != 42 {
+					t.Errorf("expected 42, got %d", val)
+				}
+			},
+		},
+		{
+			name:  "int64",
+			goVal: int64(math.MaxInt64),
+			check: func(t *testing.T, v starlark.Value) {
+				i := v.(starlark.Int)
+				val, _ := i.Int64()
+				if val != math.MaxInt64 {
+					t.Errorf("expected MaxInt64, got %d", val)
+				}
+			},
+		},
+		{
+			name:  "uint64",
+			goVal: uint64(math.MaxUint64),
+			check: func(t *testing.T, v starlark.Value) {
+				i := v.(starlark.Int)
+				val, _ := i.Uint64()
+				if val != math.MaxUint64 {
+					t.Errorf("expected MaxUint64, got %d", val)
+				}
+			},
+		},
+		{
+			name:  "float64-fractional",
+			goVal: 3.14,
+			check: func(t *testing.T, v starlark.Value) {
+				f, ok := v.(starlark.Float)
+				if !ok {
+					t.Fatalf("expected starlark.Float, got %T", v)
+				}
+				if float64(f) != 3.14 {
+					t.Errorf("expected 3.14, got %v", f)
+				}
+			},
+		},
+		{
+			name:  "float64-integer-semantics",
+			goVal: 3.0,
+			check: func(t *testing.T, v starlark.Value) {
+				// JSON number semantics: 3.0 should become starlark.Int
+				i, ok := v.(starlark.Int)
+				if !ok {
+					t.Fatalf("expected starlark.Int for 3.0, got %T (%v)", v, v)
+				}
+				val, _ := i.Int64()
+				if val != 3 {
+					t.Errorf("expected 3, got %d", val)
+				}
+			},
+		},
+		{
+			name:  "string",
+			goVal: "hello",
+			check: func(t *testing.T, v starlark.Value) {
+				s, ok := v.(starlark.String)
+				if !ok {
+					t.Fatalf("expected starlark.String, got %T", v)
+				}
+				if string(s) != "hello" {
+					t.Errorf("expected hello, got %s", s)
+				}
+			},
+		},
+		{
+			name:  "slice-any",
+			goVal: []any{1, "two", true, nil},
+			check: func(t *testing.T, v starlark.Value) {
+				list, ok := v.(*starlark.List)
+				if !ok {
+					t.Fatalf("expected *starlark.List, got %T", v)
+				}
+				if list.Len() != 4 {
+					t.Fatalf("expected 4 elements, got %d", list.Len())
+				}
+				if list.Index(3) != starlark.None {
+					t.Errorf("expected None at index 3, got %v", list.Index(3))
+				}
+			},
+		},
+		{
+			name:  "map-string-any",
+			goVal: map[string]any{"a": 1, "b": "two"},
+			check: func(t *testing.T, v starlark.Value) {
+				dict, ok := v.(*starlark.Dict)
+				if !ok {
+					t.Fatalf("expected *starlark.Dict, got %T", v)
+				}
+				if dict.Len() != 2 {
+					t.Fatalf("expected 2 entries, got %d", dict.Len())
+				}
+			},
+		},
+		{
+			name:  "nested-map-with-slices",
+			goVal: map[string]any{"items": []any{1, 2, 3}, "name": "test"},
+			check: func(t *testing.T, v starlark.Value) {
+				dict := v.(*starlark.Dict)
+				items, _, _ := dict.Get(starlark.String("items"))
+				list := items.(*starlark.List)
+				if list.Len() != 3 {
+					t.Errorf("expected 3 items, got %d", list.Len())
+				}
+			},
+		},
+		{
+			name:  "starlark-value-passthrough",
+			goVal: starlark.String("already starlark"),
+			check: func(t *testing.T, v starlark.Value) {
+				s, ok := v.(starlark.String)
+				if !ok {
+					t.Fatalf("expected starlark.String, got %T", v)
+				}
+				if string(s) != "already starlark" {
+					t.Errorf("expected 'already starlark', got %s", s)
+				}
+			},
+		},
+		{
+			name:  "typed-slice-strings",
+			goVal: []string{"a", "b", "c"},
+			check: func(t *testing.T, v starlark.Value) {
+				list, ok := v.(*starlark.List)
+				if !ok {
+					t.Fatalf("expected *starlark.List, got %T", v)
+				}
+				if list.Len() != 3 {
+					t.Errorf("expected 3 elements, got %d", list.Len())
+				}
+			},
+		},
+		{
+			name:  "typed-map-string-int",
+			goVal: map[string]int{"a": 1, "b": 2},
+			check: func(t *testing.T, v starlark.Value) {
+				dict, ok := v.(*starlark.Dict)
+				if !ok {
+					t.Fatalf("expected *starlark.Dict, got %T", v)
+				}
+				if dict.Len() != 2 {
+					t.Errorf("expected 2 entries, got %d", dict.Len())
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, err := Go[any](tt.goVal).ToStarlarkValue()
+			if (err != nil) != tt.hasErr {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err == nil {
+				tt.check(t, v)
+			}
+		})
+	}
+}
+
+func TestToStarlarkValue_Unsupported(t *testing.T) {
+	_, err := Go(struct{ X int }{42}).ToStarlarkValue()
+	if err == nil {
+		t.Fatal("expected error for unsupported type")
+	}
+}
+
+func TestGoValue_TypeSpecific(t *testing.T) {
+	// ToBool
+	b, err := Go(true).ToBool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b != starlark.True {
+		t.Errorf("expected True, got %v", b)
+	}
+
+	_, err = Go(42).ToBool()
+	if err == nil {
+		t.Fatal("expected error for ToBool on int")
+	}
+
+	// ToInt
+	i, err := Go(42).ToInt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	val, _ := i.Int64()
+	if val != 42 {
+		t.Errorf("expected 42, got %d", val)
+	}
+
+	_, err = Go("hello").ToInt()
+	if err == nil {
+		t.Fatal("expected error for ToInt on string")
+	}
+
+	// ToFloat
+	f, err := Go(3.14).ToFloat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if float64(f) != 3.14 {
+		t.Errorf("expected 3.14, got %v", f)
+	}
+
+	_, err = Go("hello").ToFloat()
+	if err == nil {
+		t.Fatal("expected error for ToFloat on string")
+	}
+
+	// ToString
+	s, err := Go("hello").ToString()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(s) != "hello" {
+		t.Errorf("expected hello, got %s", s)
+	}
+
+	_, err = Go(42).ToString()
+	if err == nil {
+		t.Fatal("expected error for ToString on int")
+	}
+}
+
+func TestGoValue_ToDict(t *testing.T) {
+	// Map[string]int with sorted keys
+	dict, err := Map(map[string]int{"b": 2, "a": 1, "c": 3}).ToDict()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dict.Len() != 3 {
+		t.Fatalf("expected 3 entries, got %d", dict.Len())
+	}
+	// Verify keys are present
+	v, found, _ := dict.Get(starlark.String("a"))
+	if !found {
+		t.Fatal("key 'a' not found")
+	}
+	iv, _ := v.(starlark.Int).Int64()
+	if iv != 1 {
+		t.Errorf("expected 1, got %d", iv)
+	}
+
+	// Error case
+	_, err = Go(42).ToDict()
+	if err == nil {
+		t.Fatal("expected error for ToDict on int")
+	}
+}
+
+func TestGoValue_ToList(t *testing.T) {
+	list, err := Slice([]string{"x", "y", "z"}).ToList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.Len() != 3 {
+		t.Fatalf("expected 3 elements, got %d", list.Len())
+	}
+	if list.Index(0).(starlark.String) != "x" {
+		t.Errorf("expected 'x', got %v", list.Index(0))
+	}
+
+	// Error case
+	_, err = Go(42).ToList()
+	if err == nil {
+		t.Fatal("expected error for ToList on int")
+	}
+}
+
+func TestGoValue_ValueReturnsConcreteType(t *testing.T) {
+	// Verify Value() returns the concrete type
+	gv := Go(42)
+	x := gv.Value() // This should compile — proves Value() returns int, not any
+	if x != 42 {
+		t.Errorf("expected 42, got %d", x)
+	}
+}
+
+func TestToStarlarkValue_RoundTrip(t *testing.T) {
+	// Test round-trip: map[string]any → Dict → map[string]any
+	original := map[string]any{
+		"name":   "test",
+		"count":  float64(42), // JSON semantics: 42.0 → Int
+		"active": true,
+		"items":  []any{"a", "b"},
+		"nested": map[string]any{"key": "value"},
+	}
+
+	starVal, err := Go[any](original).ToStarlarkValue()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dict := starVal.(*starlark.Dict)
+	goVal, err := Starlark(dict).ToGoValue()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result := goVal.(map[string]any)
+	if result["name"] != "test" {
+		t.Errorf("name: expected test, got %v", result["name"])
+	}
+	if result["count"] != int64(42) {
+		t.Errorf("count: expected 42, got %v (%T)", result["count"], result["count"])
+	}
+	if result["active"] != true {
+		t.Errorf("active: expected true, got %v", result["active"])
+	}
+	items := result["items"].([]any)
+	if len(items) != 2 || items[0] != "a" {
+		t.Errorf("items: unexpected %v", items)
+	}
+	nested := result["nested"].(map[string]any)
+	if nested["key"] != "value" {
+		t.Errorf("nested.key: expected value, got %v", nested["key"])
 	}
 }

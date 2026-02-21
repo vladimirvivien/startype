@@ -9,18 +9,26 @@ import (
 	"go.starlark.net/starlarkstruct"
 )
 
-type StarValue struct {
-	val starlark.Value
+// StarValue represents a wrapped Starlark value which can be
+// converted to a Go value.
+type StarValue[T starlark.Value] struct {
+	val T
 }
 
 // Starlark wraps a Starlark value val
 // so it can be converted to a Go value.
-func Starlark(val starlark.Value) *StarValue {
-	return &StarValue{val: val}
+func Starlark[T starlark.Value](val T) *StarValue[T] {
+	return &StarValue[T]{val: val}
 }
 
-// Value returns the wrapped Starlark value
-func (v *StarValue) Value() starlark.Value {
+// Dict wraps a *starlark.Dict for clearer intent when converting to Go map.
+func Dict(d *starlark.Dict) *StarValue[*starlark.Dict] { return Starlark(d) }
+
+// List wraps a *starlark.List for clearer intent when converting to Go slice.
+func List(l *starlark.List) *StarValue[*starlark.List] { return Starlark(l) }
+
+// Value returns the wrapped Starlark value with its concrete type.
+func (v *StarValue[T]) Value() T {
 	return v.val
 }
 
@@ -42,7 +50,7 @@ func (v *StarValue) Value() starlark.Value {
 //      *starlark.Dict  	-- map[K]T
 //      *starlark.Set   	-- []T
 
-func (v *StarValue) Go(goin interface{}) error {
+func (v *StarValue[T]) Go(goin interface{}) error {
 	goval := reflect.ValueOf(goin)
 	gotype := goval.Type()
 	if gotype.Kind() != reflect.Pointer || goval.IsNil() {
@@ -477,5 +485,148 @@ func getExactMapType(val starlark.Value, gotype reflect.Type) reflect.Type {
 		return reflect.TypeOf(map[any]any{})
 	default:
 		return gotype
+	}
+}
+
+// --- Dynamic dispatch: starlark.Value → any ---
+
+// ToGoValue performs dynamic dispatch to convert the wrapped Starlark value
+// to a Go value. It handles: None→nil, Bool→bool, Int→int64, Float→float64,
+// String→string, List→[]any (recursive), Tuple→[]any, Dict→map[string]any
+// (recursive, requires string keys). Unknown types fall back to String().
+func (v *StarValue[T]) ToGoValue() (any, error) {
+	return starlarkValueToGo(v.val)
+}
+
+// ToBool converts the wrapped Starlark value to a Go bool.
+func (v *StarValue[T]) ToBool() (bool, error) {
+	if b, ok := any(v.val).(starlark.Bool); ok {
+		return bool(b), nil
+	}
+	return false, fmt.Errorf("ToBool: value is %s, not bool", any(v.val).(starlark.Value).Type())
+}
+
+// ToInt64 converts the wrapped Starlark value to a Go int64.
+func (v *StarValue[T]) ToInt64() (int64, error) {
+	if i, ok := any(v.val).(starlark.Int); ok {
+		val, ok := i.Int64()
+		if !ok {
+			return 0, fmt.Errorf("ToInt64: value too large for int64")
+		}
+		return val, nil
+	}
+	return 0, fmt.Errorf("ToInt64: value is %s, not int", any(v.val).(starlark.Value).Type())
+}
+
+// ToFloat64 converts the wrapped Starlark value to a Go float64.
+func (v *StarValue[T]) ToFloat64() (float64, error) {
+	if f, ok := any(v.val).(starlark.Float); ok {
+		return float64(f), nil
+	}
+	return 0, fmt.Errorf("ToFloat64: value is %s, not float", any(v.val).(starlark.Value).Type())
+}
+
+// ToString converts the wrapped Starlark value to a Go string.
+func (v *StarValue[T]) ToString() (string, error) {
+	if s, ok := any(v.val).(starlark.String); ok {
+		return string(s), nil
+	}
+	return "", fmt.Errorf("ToString: value is %s, not string", any(v.val).(starlark.Value).Type())
+}
+
+// ToMap converts the wrapped Starlark Dict to a Go map[string]any.
+func (v *StarValue[T]) ToMap() (map[string]any, error) {
+	dict, ok := any(v.val).(*starlark.Dict)
+	if !ok {
+		return nil, fmt.Errorf("ToMap: value is %s, not dict", any(v.val).(starlark.Value).Type())
+	}
+	result := make(map[string]any, dict.Len())
+	for _, kv := range dict.Items() {
+		key, ok := kv[0].(starlark.String)
+		if !ok {
+			return nil, fmt.Errorf("ToMap: dict key must be string, got %s", kv[0].Type())
+		}
+		val, err := starlarkValueToGo(kv[1])
+		if err != nil {
+			return nil, fmt.Errorf("ToMap: dict[%q]: %w", string(key), err)
+		}
+		result[string(key)] = val
+	}
+	return result, nil
+}
+
+// ToSlice converts the wrapped Starlark List to a Go []any.
+func (v *StarValue[T]) ToSlice() ([]any, error) {
+	list, ok := any(v.val).(*starlark.List)
+	if !ok {
+		return nil, fmt.Errorf("ToSlice: value is %s, not list", any(v.val).(starlark.Value).Type())
+	}
+	result := make([]any, list.Len())
+	for i := 0; i < list.Len(); i++ {
+		val, err := starlarkValueToGo(list.Index(i))
+		if err != nil {
+			return nil, fmt.Errorf("ToSlice: list[%d]: %w", i, err)
+		}
+		result[i] = val
+	}
+	return result, nil
+}
+
+// starlarkValueToGo converts any starlark.Value to a Go value using
+// dynamic type dispatch. This is the core implementation shared by
+// ToGoValue, ToMap, and ToSlice.
+func starlarkValueToGo(v starlark.Value) (any, error) {
+	switch val := v.(type) {
+	case starlark.NoneType:
+		return nil, nil
+	case starlark.Bool:
+		return bool(val), nil
+	case starlark.Int:
+		if i, ok := val.Int64(); ok {
+			return i, nil
+		}
+		// Fall back to string for very large integers
+		return val.BigInt().String(), nil
+	case starlark.Float:
+		return float64(val), nil
+	case starlark.String:
+		return string(val), nil
+	case *starlark.List:
+		result := make([]any, val.Len())
+		for i := 0; i < val.Len(); i++ {
+			item, err := starlarkValueToGo(val.Index(i))
+			if err != nil {
+				return nil, fmt.Errorf("list[%d]: %w", i, err)
+			}
+			result[i] = item
+		}
+		return result, nil
+	case starlark.Tuple:
+		result := make([]any, len(val))
+		for i, item := range val {
+			v, err := starlarkValueToGo(item)
+			if err != nil {
+				return nil, fmt.Errorf("tuple[%d]: %w", i, err)
+			}
+			result[i] = v
+		}
+		return result, nil
+	case *starlark.Dict:
+		result := make(map[string]any, val.Len())
+		for _, kv := range val.Items() {
+			key, ok := kv[0].(starlark.String)
+			if !ok {
+				return nil, fmt.Errorf("dict key must be string, got %s", kv[0].Type())
+			}
+			v, err := starlarkValueToGo(kv[1])
+			if err != nil {
+				return nil, fmt.Errorf("dict[%q]: %w", string(key), err)
+			}
+			result[string(key)] = v
+		}
+		return result, nil
+	default:
+		// Fall back to String() representation for unknown types
+		return v.String(), nil
 	}
 }

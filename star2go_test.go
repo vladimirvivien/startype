@@ -1049,3 +1049,252 @@ func TestStarGo(t *testing.T) {
 		})
 	}
 }
+
+func TestToGoValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		starVal starlark.Value
+		check   func(t *testing.T, v any)
+		hasErr  bool
+	}{
+		{
+			name:    "none",
+			starVal: starlark.None,
+			check:   func(t *testing.T, v any) {
+				if v != nil {
+					t.Errorf("expected nil, got %v", v)
+				}
+			},
+		},
+		{
+			name:    "bool",
+			starVal: starlark.True,
+			check:   func(t *testing.T, v any) {
+				if v != true {
+					t.Errorf("expected true, got %v", v)
+				}
+			},
+		},
+		{
+			name:    "int",
+			starVal: starlark.MakeInt(42),
+			check:   func(t *testing.T, v any) {
+				if v.(int64) != 42 {
+					t.Errorf("expected 42, got %v", v)
+				}
+			},
+		},
+		{
+			name:    "float",
+			starVal: starlark.Float(3.14),
+			check:   func(t *testing.T, v any) {
+				if v.(float64) != 3.14 {
+					t.Errorf("expected 3.14, got %v", v)
+				}
+			},
+		},
+		{
+			name:    "string",
+			starVal: starlark.String("hello"),
+			check:   func(t *testing.T, v any) {
+				if v.(string) != "hello" {
+					t.Errorf("expected hello, got %v", v)
+				}
+			},
+		},
+		{
+			name:    "list",
+			starVal: starlark.NewList([]starlark.Value{starlark.MakeInt(1), starlark.String("two")}),
+			check:   func(t *testing.T, v any) {
+				list := v.([]any)
+				if len(list) != 2 {
+					t.Fatalf("expected 2 elements, got %d", len(list))
+				}
+				if list[0].(int64) != 1 {
+					t.Errorf("expected 1, got %v", list[0])
+				}
+				if list[1].(string) != "two" {
+					t.Errorf("expected two, got %v", list[1])
+				}
+			},
+		},
+		{
+			name:    "tuple",
+			starVal: starlark.Tuple{starlark.MakeInt(10), starlark.String("ten")},
+			check:   func(t *testing.T, v any) {
+				list := v.([]any)
+				if len(list) != 2 {
+					t.Fatalf("expected 2 elements, got %d", len(list))
+				}
+				if list[0].(int64) != 10 {
+					t.Errorf("expected 10, got %v", list[0])
+				}
+			},
+		},
+		{
+			name: "dict",
+			starVal: func() *starlark.Dict {
+				d := starlark.NewDict(2)
+				_ = d.SetKey(starlark.String("a"), starlark.MakeInt(1))
+				_ = d.SetKey(starlark.String("b"), starlark.String("two"))
+				return d
+			}(),
+			check: func(t *testing.T, v any) {
+				m := v.(map[string]any)
+				if m["a"].(int64) != 1 {
+					t.Errorf("expected 1, got %v", m["a"])
+				}
+				if m["b"].(string) != "two" {
+					t.Errorf("expected two, got %v", m["b"])
+				}
+			},
+		},
+		{
+			name: "dict-non-string-key",
+			starVal: func() *starlark.Dict {
+				d := starlark.NewDict(1)
+				_ = d.SetKey(starlark.MakeInt(1), starlark.String("one"))
+				return d
+			}(),
+			hasErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, err := Starlark(tt.starVal).ToGoValue()
+			if (err != nil) != tt.hasErr {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err == nil {
+				tt.check(t, v)
+			}
+		})
+	}
+}
+
+func TestStarValue_TypeSpecific(t *testing.T) {
+	b, err := Starlark(starlark.True).ToBool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b {
+		t.Error("expected true")
+	}
+
+	_, err = Starlark(starlark.MakeInt(1)).ToBool()
+	if err == nil {
+		t.Fatal("expected error for ToBool on int")
+	}
+
+	i, err := Starlark(starlark.MakeInt(42)).ToInt64()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i != 42 {
+		t.Errorf("expected 42, got %d", i)
+	}
+
+	_, err = Starlark(starlark.String("hello")).ToInt64()
+	if err == nil {
+		t.Fatal("expected error for ToInt64 on string")
+	}
+
+	f, err := Starlark(starlark.Float(2.71)).ToFloat64()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f != 2.71 {
+		t.Errorf("expected 2.71, got %f", f)
+	}
+
+	_, err = Starlark(starlark.String("hello")).ToFloat64()
+	if err == nil {
+		t.Fatal("expected error for ToFloat64 on string")
+	}
+
+	s, err := Starlark(starlark.String("world")).ToString()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s != "world" {
+		t.Errorf("expected world, got %s", s)
+	}
+
+	_, err = Starlark(starlark.MakeInt(1)).ToString()
+	if err == nil {
+		t.Fatal("expected error for ToString on int")
+	}
+}
+
+func TestStarValue_ToMap(t *testing.T) {
+	d := starlark.NewDict(2)
+	_ = d.SetKey(starlark.String("name"), starlark.String("test"))
+	_ = d.SetKey(starlark.String("count"), starlark.MakeInt(42))
+
+	m, err := Dict(d).ToMap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m["name"] != "test" {
+		t.Errorf("expected test, got %v", m["name"])
+	}
+	if m["count"].(int64) != 42 {
+		t.Errorf("expected 42, got %v", m["count"])
+	}
+
+	_, err = Starlark(starlark.String("hello")).ToMap()
+	if err == nil {
+		t.Fatal("expected error for ToMap on string")
+	}
+}
+
+func TestStarValue_ToSlice(t *testing.T) {
+	l := starlark.NewList([]starlark.Value{starlark.String("a"), starlark.MakeInt(1)})
+
+	s, err := List(l).ToSlice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s) != 2 {
+		t.Fatalf("expected 2 elements, got %d", len(s))
+	}
+	if s[0].(string) != "a" {
+		t.Errorf("expected a, got %v", s[0])
+	}
+
+	_, err = Starlark(starlark.String("hello")).ToSlice()
+	if err == nil {
+		t.Fatal("expected error for ToSlice on string")
+	}
+}
+
+func TestStarValue_ValueReturnsConcreteType(t *testing.T) {
+	sv := Starlark(starlark.True)
+	b := sv.Value()
+	if b != starlark.True {
+		t.Errorf("expected True, got %v", b)
+	}
+
+	d := starlark.NewDict(0)
+	dv := Starlark(d)
+	_ = dv.Value()
+}
+
+func TestStarValue_BackwardCompat(t *testing.T) {
+	var msg string
+	if err := Starlark(starlark.String("hello")).Go(&msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg != "hello" {
+		t.Errorf("expected hello, got %s", msg)
+	}
+
+	var num int64
+	if err := Starlark(starlark.MakeInt(42)).Go(&num); err != nil {
+		t.Fatal(err)
+	}
+	if num != 42 {
+		t.Errorf("expected 42, got %d", num)
+	}
+}
