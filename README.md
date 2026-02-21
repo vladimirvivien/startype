@@ -1,186 +1,167 @@
-# Startype 🤩
+# Startype
 
-Startype makes it easy to automatically convert (two-way) between Go types and Starlark-Go API types.
+Startype provides two-way conversion between Go types and [Starlark-Go](https://github.com/google/starlark-go) API types. It supports both **typed target** conversion (reflection-based, into a specific Go/Starlark type) and **dynamic dispatch** conversion (type-switched, for `any` data like JSON or Kubernetes Unstructured objects).
 
 ## Features
 
-* Two-way conversion between Go and Starlark-Go types
-* Two-way conversion for primitive types like `bool`, `integer`, `float`, and `string` types
+* Generic types: `GoValue[T any]` and `StarValue[T starlark.Value]` with type-safe `Value()` accessors
+* **Typed target** conversion: `Go(val).Starlark(&target)` / `Starlark(val).Go(&target)` (reflection-based)
+* **Dynamic dispatch** conversion: `Go(val).ToStarlarkValue()` / `Starlark(val).ToGoValue()` (type-switched)
+* **Type-specific converters**: `ToBool`, `ToInt`, `ToFloat`, `ToString` (both directions)
+* **Container converters**: `ToDict`, `ToList`, `ToMap`, `ToSlice` with convenience constructors `Map()`, `Slice()`, `Dict()`, `List()`
 * Convert Go `slice`, `array`, `map`, and `struct` types to compatible Starlark types
-* Convert Starlark `Dict`, `StringDict`, `List`, `Set`, and `StarlarkStruct` to compatible Go types
-* Map Starlark keyword args (from built-in functions) to Go struct values
-* Map both positional and keyword args to Go struct values (replacement for `starlark.UnpackArgs`)
-* Support for type pointers and empty interface (any) types
+* Convert Starlark `Dict`, `StringDict`, `List`, `Set`, and `Struct` to compatible Go types
+* Map Starlark keyword args to Go struct values via `Kwargs()`
+* Map both positional and keyword args via `Args()` (replacement for `starlark.UnpackArgs`)
+* Struct tag support: `name`, `position`, `required`, `optional`
+
+## API Overview
+
+### Constructors
+
+```go
+startype.Go(val)           // *GoValue[T] — wraps any Go value
+startype.Starlark(val)     // *StarValue[T] — wraps any Starlark value
+startype.Map(m)            // *GoValue[map[K]V] — alias for Go(m)
+startype.Slice(s)          // *GoValue[[]T] — alias for Go(s)
+startype.Dict(d)           // *StarValue[*starlark.Dict] — alias for Starlark(d)
+startype.List(l)           // *StarValue[*starlark.List] — alias for Starlark(l)
+startype.Kwargs(kwargs)    // keyword args processor
+startype.Args(args, kwargs)// positional + keyword args processor
+```
+
+### Go to Starlark
+
+```go
+// Typed target (reflection-based)
+var star starlark.Int
+startype.Go(42).Starlark(&star)
+
+// Dynamic dispatch (type-switched)
+val, err := startype.Go(myAny).ToStarlarkValue()
+
+// Type-specific
+b, err := startype.Go(true).ToBool()       // starlark.Bool
+n, err := startype.Go(42).ToInt()           // starlark.Int
+f, err := startype.Go(3.14).ToFloat()       // starlark.Float
+s, err := startype.Go("hi").ToString()      // starlark.String
+
+// Containers
+dict, err := startype.Map(map[string]int{"a": 1}).ToDict()   // *starlark.Dict
+list, err := startype.Slice([]string{"x", "y"}).ToList()      // *starlark.List
+```
+
+### Starlark to Go
+
+```go
+// Typed target (reflection-based)
+var msg string
+startype.Starlark(starStr).Go(&msg)
+
+// Dynamic dispatch (type-switched)
+goVal, err := startype.Starlark(starVal).ToGoValue()
+
+// Type-specific
+ok, err := startype.Starlark(starBool).ToBool()      // bool
+num, err := startype.Starlark(starInt).ToInt64()       // int64
+f, err := startype.Starlark(starFloat).ToFloat64()     // float64
+s, err := startype.Starlark(starStr).ToString()        // string
+
+// Containers
+m, err := startype.Dict(starDict).ToMap()              // map[string]any
+s, err := startype.List(starList).ToSlice()             // []any
+```
+
+### Generic Value Access
+
+`Value()` returns the concrete type, not `any`:
+
+```go
+gv := startype.Go(42)
+x := gv.Value()                  // x is int (not any)
+
+sv := startype.Starlark(myDict)
+d := sv.Value()                  // d is *starlark.Dict (not starlark.Value)
+```
 
 ## Examples
 
-### Convert Go value to Starlark value
-The following converts a Go `struct` to a (compatible) `*starlarkstruct.Struct` value:
+### Go struct to Starlark struct
 
 ```go
-func main() {
-    data := struct {
-		Name  string
-		Count int
-	}{
-		Name:  "test",
-		Count: 24,
-	}
+data := struct {
+    Name  string
+    Count int
+}{Name: "test", Count: 24}
 
-	var star starlarkstruct.Struct
-	if err := startype.Go(data).Starlark(&star); err != nil {
-		log.Fatal(err)
-	}
-
-	nameVal, err := star.Attr("name")
-	if err != nil {
-		log.Fatal(err)
-	}
-	if nameVal.String() != `"test"` {
-		log.Fatal("unexpected attr name value: %s", nameVal.String())
-	}
+var star starlarkstruct.Struct
+if err := startype.Go(data).Starlark(&star); err != nil {
+    log.Fatal(err)
 }
-```
-### Convert Starlark value to Go value
 
-Startype can easily convert a Starlark-API value into a standard Go value. The following 
-converts a `starlark.Dict` dictionary value to a Go `map[string]string` value.
+nameVal, _ := star.Attr("name")
+fmt.Println(nameVal) // "test"
+```
+
+### Starlark dict to Go map
 
 ```go
-func main() {
-    dict := starlark.NewDict(2)
-    dict.SetKey(starlark.String("msg0"), starlark.String("Hello"))
-    dict.SetKey(starlark.String("msg1"), starlark.String("World!"))
+dict := starlark.NewDict(2)
+_ = dict.SetKey(starlark.String("msg0"), starlark.String("Hello"))
+_ = dict.SetKey(starlark.String("msg1"), starlark.String("World!"))
 
-    gomap := make(map[string]string)
-    if err := startype.Starlark(val).Go(&gomap); err != nil {
-        log.Fatalf("failed to convert starlark to go value: %s", err)
-    }
-	
-    if gomap["msg0"] != "Hello" {
-        log.Fatalf("unexpected map[msg] value: %v", gomap["msg"])
-    }
-    if gomap["msg1"] != "World!" {
-        log.Fatalf("unexpected map[msg] value: %v", gomap["msg"])
-    }
+gomap := make(map[string]string)
+if err := startype.Starlark(dict).Go(&gomap); err != nil {
+    log.Fatal(err)
 }
+fmt.Println(gomap["msg0"]) // Hello
 ```
 
-### Use struct annotations to control conversion
+### Dynamic dispatch (any data)
 
-Startype supports struct annotations to describe field names to target during conversion. For instance, the following example uses the provided struct tags when creating Starlark-Go values. 
+Useful for JSON unmarshal results, Kubernetes Unstructured objects, etc.:
 
 ```go
-func main() {
-    data := struct {
-		Name  string `name:"msg0"`
-		Count int    `name:"msg1"`
-	}{
-		Name:  "test",
-		Count: 24,
-	}
-
-	var star starlarkstruct.Struct
-	if err := startype.Go(data).Starlark(&star); err != nil {
-		t.Fatal(err)
-	}
-
-    // starlark struct field created with annotated name
-    nameVal, err := star.Attr("msg0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if nameVal.String() != `"test"` {
-		t.Errorf("unexpected attr name value: %s", nameVal.String())
-	}
+// Go any → Starlark value
+data := map[string]any{
+    "name": "test",
+    "tags": []any{"a", "b"},
+    "count": 42,
 }
+val, err := startype.Go(data).ToStarlarkValue()
+// val is a *starlark.Dict with nested List and Int
+
+// Starlark value → Go any
+goVal, err := startype.Starlark(val).ToGoValue()
+// goVal is map[string]any with nested []any and int64
 ```
 
-Similarly, Startype can use struct tags to copy Starlark-API Go values during conversion to Go values, as shown below:
+### Struct tags
 
 ```go
-func main() {
-    dict := starlark.StringDict{
-        "mymsg0": starlark.String("Hello"),
-        "mymsg1": starlark.String("World!"),
-    }
-    star := starlarkstruct.FromStringDict(starlark.String("struct"), dict)
-    
-    var godata struct {
-        Salutation string   `name:"mymsg0"`
-        Message string      `name:"mymsg1"`
-	}
+data := struct {
+    Name  string `name:"msg0"`
+    Count int    `name:"msg1"`
+}{Name: "test", Count: 24}
 
-	if err := startype.Starlark(&star).Go(&godata); err != nil {
-		log.Fatalf("conversion failed: %s", err)
-	}
-
-	if godata.Message != "World!" {
-		log.Fatalf("unexpected go struct field value: %s", godata.Message)
-	}
-}
+var star starlarkstruct.Struct
+startype.Go(data).Starlark(&star)
+nameVal, _ := star.Attr("msg0") // uses tag name
 ```
 
-## Starlark keyword argument processing
-Startype makes it easy to capture and process Starlark keyword arguments (passed as tuples in [built-in functions](https://github.com/google/starlark-go/blob/master/doc/spec.md#built-in-functions)) by automatically map the provided arguments to a Go struct value. For instance, the following maps `kwargs` (a stand in for a actual keyword arguments) to Go struct `args`:
-
-```go
-
-func main() {
-    kwargs := []starlark.Tuple{
-        {starlark.String("msg"), starlark.String("hello")},
-        {starlark.String("cnt"), starlark.MakeInt(32)},
-    }
-    var args struct {
-        Message string   `name:"msg"`
-        Count int64      `name:"cnt"`
-    }
-	if err := startype.Kwargs(kwargs).Go(&val); err != nil {
-		t.Fatal(err)
-	}
-
-    fmt.Println(args.Message) // prints hello
-}
-```
-
-An argument can be marked as optional to avoid error if it is not provided. For instance,
-if argument `cnt` is not provided in the `kwargs` tuple, function `KwargsToGo` will not report an error.
-
-```go
-
-func main() {
-    kwargs := []starlark.Tuple{
-        {starlark.String("msg"), starlark.String("hello")},
-    }
-    var args struct {
-        Message string   `name:"msg"`
-        Count int64      `name:"cnt" optional:"true"`
-    }
-	if err := startype.Kwargs(kwargs).Go(&args); err != nil {
-		log.Fatal(err)
-	}
-
-    fmt.Println(args.Message) // prints hello
-}
-```
-
-## Combined positional and keyword argument processing
-
-For more flexible argument handling (similar to `starlark.UnpackArgs`), Startype provides the `Args()` function that handles both positional arguments and keyword arguments. This is useful when implementing Starlark built-in functions that accept arguments in either style.
+### Keyword argument processing
 
 ```go
 func myBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
     var params struct {
         Path     string `name:"path" position:"0" required:"true"`
         Encoding string `name:"encoding" position:"1"`
-        Force    bool   `name:"force" position:"2"`
+        Force    bool   `name:"force"`
     }
     if err := startype.Args(args, kwargs).Go(&params); err != nil {
         return nil, err
     }
-
-    // params.Path, params.Encoding, params.Force are now populated
-    // ...
+    // params.Path, params.Encoding, params.Force are populated
 }
 ```
 
@@ -190,54 +171,36 @@ func myBuiltin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tupl
 |-----|---------|-------------|
 | `name` | `name:"path"` | Keyword argument name |
 | `position` | `position:"0"` | Positional argument index (0-based) |
-| `required` | `required:"true"` | Argument must be provided (positionally or by keyword) |
+| `required` | `required:"true"` | Argument must be provided |
+| `optional` | `optional:"true"` | Argument may be omitted (for `Kwargs()`) |
 
-A field can have both `name` and `position` tags to accept either calling style. If both a positional argument and a keyword argument provide a value for the same field, the keyword argument wins.
+A field can have both `name` and `position` tags to accept either calling style. If both provide a value, the keyword argument wins.
 
-### Examples
+## Dynamic Dispatch Type Mapping
 
-Positional arguments only:
-```go
-// Starlark call: my_func("/path/to/file", "utf-8")
-var params struct {
-    Path     string `name:"path" position:"0"`
-    Encoding string `name:"encoding" position:"1"`
-}
-startype.Args(args, kwargs).Go(&params)
-// params.Path = "/path/to/file", params.Encoding = "utf-8"
-```
+### Go to Starlark (`ToStarlarkValue`)
 
-Keyword arguments only:
-```go
-// Starlark call: my_func(path="/path/to/file", encoding="utf-8")
-var params struct {
-    Path     string `name:"path" position:"0"`
-    Encoding string `name:"encoding" position:"1"`
-}
-startype.Args(args, kwargs).Go(&params)
-// params.Path = "/path/to/file", params.Encoding = "utf-8"
-```
+| Go type | Starlark type |
+|---------|---------------|
+| `nil` | `None` |
+| `bool` | `Bool` |
+| `int`, `int64`, etc. | `Int` |
+| `float64` (no fractional part) | `Int` |
+| `float64` (fractional) | `Float` |
+| `string` | `String` |
+| `[]any` | `List` (recursive) |
+| `map[string]any` | `Dict` (sorted keys, recursive) |
 
-Mixed positional and keyword:
-```go
-// Starlark call: my_func("/path/to/file", encoding="utf-8")
-var params struct {
-    Path     string `name:"path" position:"0"`
-    Encoding string `name:"encoding" position:"1"`
-}
-startype.Args(args, kwargs).Go(&params)
-// params.Path = "/path/to/file", params.Encoding = "utf-8"
-```
+### Starlark to Go (`ToGoValue`)
 
-Required arguments:
-```go
-var params struct {
-    Path     string `name:"path" position:"0" required:"true"`
-    Encoding string `name:"encoding" position:"1"` // optional, defaults to zero value
-}
-if err := startype.Args(args, kwargs).Go(&params); err != nil {
-    // Error if path not provided: "missing required argument: path"
-}
-```
+| Starlark type | Go type |
+|---------------|---------|
+| `None` | `nil` |
+| `Bool` | `bool` |
+| `Int` | `int64` |
+| `Float` | `float64` |
+| `String` | `string` |
+| `List`, `Tuple` | `[]any` (recursive) |
+| `Dict` | `map[string]any` (recursive, string keys required) |
 
-For additional conversion examples, see the test functions in the test files.
+For additional examples, see the test files.
