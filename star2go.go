@@ -456,6 +456,9 @@ func starlarkToGo(srcVal starlark.Value, goval reflect.Value) error {
 		return fmt.Errorf("NoneType: target type (%s) must be any", gotype.Kind())
 
 	default:
+		if dc, ok := srcVal.(DictConvertible); ok {
+			return starlarkToGo(dc.ToDict(), goval)
+		}
 		return fmt.Errorf("unsupported type: %s", srcType)
 	}
 }
@@ -626,6 +629,9 @@ func starlarkValueToGo(v starlark.Value) (any, error) {
 		}
 		return result, nil
 	default:
+		if dc, ok := v.(DictConvertible); ok {
+			return starlarkValueToGo(dc.ToDict())
+		}
 		// Fall back to String() representation for unknown types
 		return v.String(), nil
 	}

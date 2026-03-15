@@ -1298,3 +1298,128 @@ func TestStarValue_BackwardCompat(t *testing.T) {
 		t.Errorf("expected 42, got %d", num)
 	}
 }
+
+// mockDictConvertible is a test type that implements DictConvertible.
+type mockDictConvertible struct {
+	dict *starlark.Dict
+}
+
+func (m *mockDictConvertible) String() string        { return "<mock>" }
+func (m *mockDictConvertible) Type() string           { return "mock" }
+func (m *mockDictConvertible) Freeze()                {}
+func (m *mockDictConvertible) Truth() starlark.Bool   { return starlark.True }
+func (m *mockDictConvertible) Hash() (uint32, error)  { return 0, nil }
+func (m *mockDictConvertible) ToDict() *starlark.Dict { return m.dict }
+
+func newMockDictConvertible(kvs ...any) *mockDictConvertible {
+	d := starlark.NewDict(len(kvs) / 2)
+	for i := 0; i < len(kvs); i += 2 {
+		k := starlark.String(kvs[i].(string))
+		var v starlark.Value
+		switch val := kvs[i+1].(type) {
+		case string:
+			v = starlark.String(val)
+		case int:
+			v = starlark.MakeInt(val)
+		case starlark.Value:
+			v = val
+		}
+		d.SetKey(k, v)
+	}
+	return &mockDictConvertible{dict: d}
+}
+
+func TestDictConvertible_TypedDispatch(t *testing.T) {
+	mock := newMockDictConvertible("kind", "Deployment", "name", "web")
+
+	var goVal any
+	if err := Starlark(mock).Go(&goVal); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Typed dispatch with interface{} target produces map[any]any
+	m, ok := goVal.(map[any]any)
+	if !ok {
+		t.Fatalf("expected map[any]any, got %T", goVal)
+	}
+	if m["kind"] != "Deployment" {
+		t.Errorf("expected kind=Deployment, got %v", m["kind"])
+	}
+	if m["name"] != "web" {
+		t.Errorf("expected name=web, got %v", m["name"])
+	}
+}
+
+func TestDictConvertible_DynamicDispatch(t *testing.T) {
+	mock := newMockDictConvertible("kind", "Service", "port", 80)
+
+	val, err := Starlark(mock).ToGoValue()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any, got %T", val)
+	}
+	if m["kind"] != "Service" {
+		t.Errorf("expected kind=Service, got %v", m["kind"])
+	}
+	if m["port"] != int64(80) {
+		t.Errorf("expected port=80, got %v", m["port"])
+	}
+}
+
+func TestDictConvertible_NestedInList(t *testing.T) {
+	mock := newMockDictConvertible("name", "container1")
+	list := starlark.NewList([]starlark.Value{mock, starlark.String("plain")})
+
+	// Use dynamic dispatch — produces map[string]any for dicts
+	val, err := Starlark(list).ToGoValue()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	slice, ok := val.([]any)
+	if !ok {
+		t.Fatalf("expected []any, got %T", val)
+	}
+	if len(slice) != 2 {
+		t.Fatalf("expected 2 elements, got %d", len(slice))
+	}
+
+	m, ok := slice[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first element to be map[string]any, got %T", slice[0])
+	}
+	if m["name"] != "container1" {
+		t.Errorf("expected name=container1, got %v", m["name"])
+	}
+	if slice[1] != "plain" {
+		t.Errorf("expected second element=plain, got %v", slice[1])
+	}
+}
+
+func TestDictConvertible_NestedInDict(t *testing.T) {
+	inner := newMockDictConvertible("image", "nginx")
+	outer := starlark.NewDict(1)
+	outer.SetKey(starlark.String("container"), inner)
+
+	// Use dynamic dispatch — produces map[string]any for dicts
+	val, err := Starlark(outer).ToGoValue()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any, got %T", val)
+	}
+	innerMap, ok := m["container"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected container to be map[string]any, got %T", m["container"])
+	}
+	if innerMap["image"] != "nginx" {
+		t.Errorf("expected image=nginx, got %v", innerMap["image"])
+	}
+}
