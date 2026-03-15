@@ -1324,7 +1324,9 @@ func newMockDictConvertible(kvs ...any) *mockDictConvertible {
 		case starlark.Value:
 			v = val
 		}
-		d.SetKey(k, v)
+		if err := d.SetKey(k, v); err != nil {
+			panic(err)
+		}
 	}
 	return &mockDictConvertible{dict: d}
 }
@@ -1403,7 +1405,9 @@ func TestDictConvertible_NestedInList(t *testing.T) {
 func TestDictConvertible_NestedInDict(t *testing.T) {
 	inner := newMockDictConvertible("image", "nginx")
 	outer := starlark.NewDict(1)
-	outer.SetKey(starlark.String("container"), inner)
+	if err := outer.SetKey(starlark.String("container"), inner); err != nil {
+		t.Fatal(err)
+	}
 
 	// Use dynamic dispatch — produces map[string]any for dicts
 	val, err := Starlark(outer).ToGoValue()
