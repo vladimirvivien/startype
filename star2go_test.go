@@ -1304,7 +1304,7 @@ type mockDictConvertible struct {
 	dict *starlark.Dict
 }
 
-func (m *mockDictConvertible) String() string        { return "<mock>" }
+func (m *mockDictConvertible) String() string         { return "<mock>" }
 func (m *mockDictConvertible) Type() string           { return "mock" }
 func (m *mockDictConvertible) Freeze()                {}
 func (m *mockDictConvertible) Truth() starlark.Bool   { return starlark.True }
